@@ -505,8 +505,16 @@ export default function App() {
             )}
           >
             {error && (
-              <div className="absolute inset-0 flex items-center justify-center text-red-400 p-6 text-center z-0">
+              <div className="absolute inset-0 flex items-center justify-center text-red-400 p-6 text-center z-10">
                 {error}
+              </div>
+            )}
+
+            {!isModelLoaded && !error && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/50 backdrop-blur-md z-20">
+                <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
+                <div className="text-lg font-medium text-emerald-500">Initializing AI Model</div>
+                <div className="text-sm text-zinc-400 mt-1">Downloading neural weights...</div>
               </div>
             )}
 
