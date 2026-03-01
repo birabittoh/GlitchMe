@@ -1,5 +1,19 @@
 import { RegionData } from './poseDetector';
 
+export interface GlitchEffects {
+  colorInversion: boolean;
+  sliceDisplacement: boolean;
+  blockDisplacement: boolean;
+  chromaticAberration: boolean;
+}
+
+export const DEFAULT_GLITCH_EFFECTS: GlitchEffects = {
+  colorInversion: true,
+  sliceDisplacement: true,
+  blockDisplacement: true,
+  chromaticAberration: true,
+};
+
 export class GlitchRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -25,7 +39,8 @@ export class GlitchRenderer {
     regions: RegionData[],
     isDynamic: boolean,
     fixedIntensity: number,
-    showDebug: boolean
+    showDebug: boolean,
+    effects: GlitchEffects = DEFAULT_GLITCH_EFFECTS
   ) {
     const { width, height } = this.canvas;
 
@@ -43,7 +58,7 @@ export class GlitchRenderer {
         const intensity = isDynamic ? region.smoothedVelocity * fixedIntensity : fixedIntensity;
 
         if (intensity > 0.05) {
-          this.applyGlitch(video, region, intensity);
+          this.applyGlitch(video, region, intensity, effects);
         }
 
         if (showDebug) {
@@ -55,9 +70,9 @@ export class GlitchRenderer {
     }
   }
 
-  private applyGlitch(video: HTMLVideoElement, region: RegionData, intensity: number) {
+  private applyGlitch(video: HTMLVideoElement, region: RegionData, intensity: number, effects: GlitchEffects) {
     const { xMin, yMin, width, height } = region.boundingBox;
-    
+
     // Ensure bounds are within canvas
     const x = Math.max(0, Math.floor(xMin));
     const y = Math.max(0, Math.floor(yMin));
@@ -67,7 +82,7 @@ export class GlitchRenderer {
     if (w <= 0 || h <= 0) return;
 
     // 1. Color Inversion Block
-    if (Math.random() < intensity * 0.5) {
+    if (effects.colorInversion && Math.random() < intensity * 0.5) {
       const invW = Math.random() * w * 0.8;
       const invH = Math.random() * h * 0.8;
       const invX = x + Math.random() * (w - invW);
@@ -80,46 +95,100 @@ export class GlitchRenderer {
     }
 
     // 2. Horizontal slice displacement
-    const numSlices = Math.floor(intensity * 10) + 1;
-    const sliceHeight = Math.floor(h / numSlices);
-    
-    for (let i = 0; i < numSlices; i++) {
-        if (Math.random() > intensity) continue; // Only displace some slices based on intensity
-        
-        const sliceY = y + i * sliceHeight;
-        const sliceH = Math.min(sliceHeight, (y + h) - sliceY);
-        
-        if (sliceH <= 0) continue;
+    if (effects.sliceDisplacement) {
+      const numSlices = Math.floor(intensity * 10) + 1;
+      const sliceHeight = Math.floor(h / numSlices);
 
-        const displacement = (Math.random() - 0.5) * intensity * 40; // Max 20px displacement
-        
-        // Draw the displaced slice from the original video
-        this.ctx.drawImage(
-            video, 
-            x, sliceY, w, sliceH, // Source
-            x + displacement, sliceY, w, sliceH // Destination
-        );
+      for (let i = 0; i < numSlices; i++) {
+          if (Math.random() > intensity) continue;
+
+          const sliceY = y + i * sliceHeight;
+          const sliceH = Math.min(sliceHeight, (y + h) - sliceY);
+
+          if (sliceH <= 0) continue;
+
+          const displacement = (Math.random() - 0.5) * intensity * 40;
+
+          this.ctx.drawImage(
+              video,
+              x, sliceY, w, sliceH,
+              x + displacement, sliceY, w, sliceH
+          );
+      }
     }
 
     // 3. Block displacement
-    const numBlocks = Math.floor(intensity * 5);
-    for (let i = 0; i < numBlocks; i++) {
-        const blockW = Math.random() * w * 0.5;
-        const blockH = Math.random() * h * 0.5;
-        
-        if (blockW <= 0 || blockH <= 0) continue;
+    if (effects.blockDisplacement) {
+      const numBlocks = Math.floor(intensity * 5);
+      for (let i = 0; i < numBlocks; i++) {
+          const blockW = Math.random() * w * 0.5;
+          const blockH = Math.random() * h * 0.5;
 
-        const blockX = x + Math.random() * (w - blockW);
-        const blockY = y + Math.random() * (h - blockH);
-        const displacementX = (Math.random() - 0.5) * intensity * 60;
-        const displacementY = (Math.random() - 0.5) * intensity * 60;
+          if (blockW <= 0 || blockH <= 0) continue;
 
-        this.ctx.drawImage(
-            video,
-            blockX, blockY, blockW, blockH,
-            blockX + displacementX, blockY + displacementY, blockW, blockH
-        );
+          const blockX = x + Math.random() * (w - blockW);
+          const blockY = y + Math.random() * (h - blockH);
+          const displacementX = (Math.random() - 0.5) * intensity * 60;
+          const displacementY = (Math.random() - 0.5) * intensity * 60;
+
+          this.ctx.drawImage(
+              video,
+              blockX, blockY, blockW, blockH,
+              blockX + displacementX, blockY + displacementY, blockW, blockH
+          );
+      }
     }
+
+    // 4. Chromatic Aberration
+    if (effects.chromaticAberration) {
+      this.applyChromaticAberration(x, y, w, h, intensity);
+    }
+  }
+
+  private applyChromaticAberration(x: number, y: number, w: number, h: number, intensity: number) {
+    const offset = Math.ceil(intensity * 8);
+    if (offset < 1) return;
+
+    // Expand the read area to account for the shift so edges don't clip
+    const readX = Math.max(0, x - offset);
+    const readY = y;
+    const readW = Math.min(this.canvas.width - readX, w + offset * 2);
+    const readH = h;
+
+    if (readW <= 0 || readH <= 0) return;
+
+    let imageData: ImageData;
+    try {
+      imageData = this.ctx.getImageData(readX, readY, readW, readH);
+    } catch {
+      return;
+    }
+    const data = imageData.data;
+
+    // Work on a copy so we read original values
+    const original = new Uint8ClampedArray(data);
+
+    for (let row = 0; row < readH; row++) {
+      for (let col = 0; col < readW; col++) {
+        const idx = (row * readW + col) * 4;
+
+        // Shift red channel to the left
+        const redCol = col + offset;
+        if (redCol >= 0 && redCol < readW) {
+          const redIdx = (row * readW + redCol) * 4;
+          data[idx] = original[redIdx]; // R
+        }
+
+        // Shift blue channel to the right
+        const blueCol = col - offset;
+        if (blueCol >= 0 && blueCol < readW) {
+          const blueIdx = (row * readW + blueCol) * 4;
+          data[idx + 2] = original[blueIdx + 2]; // B
+        }
+      }
+    }
+
+    this.ctx.putImageData(imageData, readX, readY);
   }
 
   private drawDebug(region: RegionData, intensity: number) {
