@@ -24,8 +24,8 @@ export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
   { key: '1 – 9', description: 'Select input device by number' },
   { key: 'Space', description: 'Toggle dynamic / fixed mode' },
   { key: 'Z / X', description: 'Decrease / increase current intensity by 5%' },
-  { key: 'C / V', description: 'Decrease / increase dynamic intensity by 5%' },
-  { key: 'B / N', description: 'Decrease / increase fixed intensity by 5%' },
+  { key: 'C / V', description: 'Decrease / increase fixed intensity by 5%' },
+  { key: 'B / N', description: 'Decrease / increase dynamic intensity by 5%' },
   { key: 'P',     description: 'Toggle all effects on / off' },
   { key: 'F',     description: 'Toggle fullscreen' },
   { key: 'D',     description: 'Toggle debug mode' },
@@ -33,7 +33,7 @@ export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
   { key: '?',     description: 'Open / close this help modal' },
 ];
 
-// ─── Persisted settings ───────────────────────────────────────────────────────
+// ─── App State ────────────────────────────────────────────────────────────────
 
 interface AppSettings {
   selectedDeviceId: string;
@@ -43,6 +43,16 @@ interface AppSettings {
   showDebug: boolean;
   isCropMode: boolean;
   effects: GlitchEffects;
+}
+
+interface AppState {
+  settings: AppSettings;
+  devices: MediaDeviceInfo[];
+  isIdle: boolean;
+  isFullscreen: boolean;
+  showHelp: boolean;
+  isModelLoaded: boolean;
+  error: string | null;
 }
 
 const STORAGE_KEY = 'glitch-settings';
@@ -88,35 +98,38 @@ export default function App() {
   const rendererRef = useRef<GlitchRenderer | null>(null);
   const requestRef = useRef<number>(0);
 
-  // ── Persisted state (single object) ────────────────────────────────────────
+  // ── Unified State ──────────────────────────────────────────────────────────
 
-  const [settings, setSettings] = useState<AppSettings>(loadSettings);
-  const settingsRef = useRef(settings);
+  const [state, setState] = useState<AppState>(() => ({
+    settings: loadSettings(),
+    devices: [],
+    isIdle: false,
+    isFullscreen: false,
+    showHelp: false,
+    isModelLoaded: false,
+    error: null,
+  }));
+
+  const stateRef = useRef(state);
 
   useEffect(() => {
-    settingsRef.current = settings;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+    stateRef.current = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
+  }, [state]);
 
   const adjustIntensity = useCallback((key: 'dynamicIntensity' | 'fixedIntensity', delta: number) =>
-    setSettings(s => ({ ...s, [key]: Math.max(0, Math.min(2, parseFloat((s[key] + delta).toFixed(2)))) })), []);
-
-  // ── Transient state ───────────────────────────────────────────────────────
-
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const devicesRef = useRef(devices);
-  useEffect(() => { devicesRef.current = devices; }, [devices]);
-
-  const [isIdle, setIsIdle] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [isModelLoaded, setIsModelLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+    setState(prev => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        [key]: Math.max(0, Math.min(2, parseFloat((prev.settings[key] + delta).toFixed(2))))
+      }
+    })), []);
 
   // ── Fullscreen ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    const handler = () => setState(prev => ({ ...prev, isFullscreen: !!document.fullscreenElement }));
     document.addEventListener('fullscreenchange', handler);
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
@@ -132,13 +145,13 @@ export default function App() {
   // ── Idle detection ────────────────────────────────────────────────────────
 
   const handleInteraction = () => {
-    setIsIdle(false);
+    setState(prev => prev.isIdle ? { ...prev, isIdle: false } : prev);
     if (idleTimeoutRef.current !== null) window.clearTimeout(idleTimeoutRef.current);
-    idleTimeoutRef.current = window.setTimeout(() => setIsIdle(true), 2000);
+    idleTimeoutRef.current = window.setTimeout(() => setState(prev => ({ ...prev, isIdle: true })), 2000);
   };
 
   const handleMouseLeave = () => {
-    setIsIdle(false);
+    setState(prev => prev.isIdle ? { ...prev, isIdle: false } : prev);
     if (idleTimeoutRef.current !== null) window.clearTimeout(idleTimeoutRef.current);
   };
 
@@ -155,45 +168,57 @@ export default function App() {
 
       // 1–9: switch camera by index
       if (/^[1-9]$/.test(key)) {
-        const device = devicesRef.current[parseInt(key, 10) - 1];
-        if (device) setSettings(s => ({ ...s, selectedDeviceId: device.deviceId }));
+        const device = stateRef.current.devices[parseInt(key, 10) - 1];
+        if (device) setState(prev => ({
+          ...prev,
+          settings: { ...prev.settings, selectedDeviceId: device.deviceId }
+        }));
         return;
       }
 
       switch (key) {
         case ' ':
           e.preventDefault();
-          setSettings(s => ({ ...s, isDynamicMode: !s.isDynamicMode }));
+          setState(prev => ({
+            ...prev,
+            settings: { ...prev.settings, isDynamicMode: !prev.settings.isDynamicMode }
+          }));
           break;
         case 'z':
         case 'Z':
-          adjustIntensity(settingsRef.current.isDynamicMode ? 'dynamicIntensity' : 'fixedIntensity', -STEP);
+          adjustIntensity(stateRef.current.settings.isDynamicMode ? 'dynamicIntensity' : 'fixedIntensity', -STEP);
           break;
         case 'x':
         case 'X':
-          adjustIntensity(settingsRef.current.isDynamicMode ? 'dynamicIntensity' : 'fixedIntensity', STEP);
+          adjustIntensity(stateRef.current.settings.isDynamicMode ? 'dynamicIntensity' : 'fixedIntensity', STEP);
           break;
         case 'c':
         case 'C':
-          adjustIntensity('dynamicIntensity', -STEP);
+          adjustIntensity('fixedIntensity', -STEP);
           break;
         case 'v':
         case 'V':
-          adjustIntensity('dynamicIntensity', STEP);
+          adjustIntensity('fixedIntensity', STEP);
           break;
         case 'b':
         case 'B':
-          adjustIntensity('fixedIntensity', -STEP);
+          adjustIntensity('dynamicIntensity', -STEP);
           break;
         case 'n':
         case 'N':
-          adjustIntensity('fixedIntensity', STEP);
+          adjustIntensity('dynamicIntensity', STEP);
           break;
         case 'p':
         case 'P':
-          setSettings(s => {
-            const next = !Object.values(s.effects).some(Boolean);
-            return { ...s, effects: { colorInversion: next, sliceDisplacement: next, blockDisplacement: next, chromaticAberration: next } };
+          setState(prev => {
+            const next = !Object.values(prev.settings.effects).some(Boolean);
+            return {
+              ...prev,
+              settings: {
+                ...prev.settings,
+                effects: { colorInversion: next, sliceDisplacement: next, blockDisplacement: next, chromaticAberration: next }
+              }
+            };
           });
           break;
         case 'f':
@@ -202,22 +227,34 @@ export default function App() {
           break;
         case 'd':
         case 'D':
-          setSettings(s => ({ ...s, showDebug: !s.showDebug }));
+          setState(prev => ({
+            ...prev,
+            settings: { ...prev.settings, showDebug: !prev.settings.showDebug }
+          }));
           break;
         case 's':
         case 'S':
-          setSettings(s => ({ ...s, isCropMode: !s.isCropMode }));
+          setState(prev => ({
+            ...prev,
+            settings: { ...prev.settings, isCropMode: !prev.settings.isCropMode }
+          }));
           break;
         case '?':
-          setShowHelp(prev => !prev);
+          setState(prev => ({ ...prev, showHelp: !prev.showHelp }));
           break;
         case 'Escape':
-          setShowHelp(false);
+          setState(prev => ({ ...prev, showHelp: false }));
           break;
         default: {
           const effectDef = EFFECT_DEFS.find(d => d.keybind === key.toUpperCase());
           if (effectDef) {
-            setSettings(s => ({ ...s, effects: { ...s.effects, [effectDef.effectKey]: !s.effects[effectDef.effectKey] } }));
+            setState(prev => ({
+              ...prev,
+              settings: {
+                ...prev.settings,
+                effects: { ...prev.settings.effects, [effectDef.effectKey]: !prev.settings.effects[effectDef.effectKey] }
+              }
+            }));
           }
         }
       }
@@ -235,16 +272,22 @@ export default function App() {
         await navigator.mediaDevices.getUserMedia({ video: true });
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = allDevices.filter(d => d.kind === 'videoinput');
-        setDevices(videoDevices);
-        if (videoDevices.length > 0) {
-          const savedId = settingsRef.current.selectedDeviceId;
+        setState(prev => {
+          const savedId = prev.settings.selectedDeviceId;
           const exists = videoDevices.some(d => d.deviceId === savedId);
-          if (!savedId || !exists) {
-            setSettings(s => ({ ...s, selectedDeviceId: videoDevices[0].deviceId }));
-          }
-        }
+          return {
+            ...prev,
+            devices: videoDevices,
+            settings: {
+              ...prev.settings,
+              selectedDeviceId: (!savedId || !exists) && videoDevices.length > 0
+                ? videoDevices[0].deviceId
+                : prev.settings.selectedDeviceId
+            }
+          };
+        });
       } catch (err) {
-        setError('Failed to access webcam. Please ensure permissions are granted.');
+        setState(prev => ({ ...prev, error: 'Failed to access webcam. Please ensure permissions are granted.' }));
         console.error(err);
       }
     }
@@ -259,9 +302,9 @@ export default function App() {
         const detector = new PoseDetectorService();
         await detector.initialize();
         detectorRef.current = detector;
-        setIsModelLoaded(true);
+        setState(prev => ({ ...prev, isModelLoaded: true }));
       } catch (err) {
-        setError('Failed to load pose detection model.');
+        setState(prev => ({ ...prev, error: 'Failed to load pose detection model.' }));
         console.error(err);
       }
     }
@@ -270,7 +313,7 @@ export default function App() {
 
   // ── Stream ────────────────────────────────────────────────────────────────
 
-  const { selectedDeviceId } = settings;
+  const { selectedDeviceId } = state.settings;
 
   useEffect(() => {
     if (!selectedDeviceId || !videoRef.current) return;
@@ -290,7 +333,10 @@ export default function App() {
           videoRef.current.play().catch(console.error);
         }
       } catch (err) {
-        if (isMounted) { setError('Failed to start video stream.'); console.error(err); }
+        if (isMounted) {
+          setState(prev => ({ ...prev, error: 'Failed to start video stream.' }));
+          console.error(err);
+        }
       }
     }
 
@@ -304,7 +350,7 @@ export default function App() {
   // ── Render loop ───────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!isModelLoaded || !videoRef.current || !canvasRef.current) return;
+    if (!state.isModelLoaded || !videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -323,7 +369,7 @@ export default function App() {
               renderer.resize(video.videoWidth, video.videoHeight);
             }
             const regions = await detectorRef.current.detectPoses(video);
-            const s = settingsRef.current;
+            const s = stateRef.current.settings;
             const intensity = s.isDynamicMode ? s.dynamicIntensity : s.fixedIntensity;
             renderer.render(video, regions, s.isDynamicMode, intensity, s.showDebug, s.effects);
           } finally {
@@ -347,15 +393,23 @@ export default function App() {
 
     requestRef.current = requestAnimationFrame(renderLoop);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [isModelLoaded]);
+  }, [state.isModelLoaded]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
-  const { isDynamicMode, dynamicIntensity, fixedIntensity, showDebug, isCropMode, effects } = settings;
+  const {
+    settings: { isDynamicMode, dynamicIntensity, fixedIntensity, showDebug, isCropMode, effects },
+    devices,
+    isIdle,
+    isFullscreen,
+    showHelp,
+    isModelLoaded,
+    error
+  } = state;
 
   const intensitySliders = [
-    { label: 'Dynamic', key: 'dynamicIntensity' as const, value: dynamicIntensity, active: isDynamicMode },
     { label: 'Fixed',   key: 'fixedIntensity' as const,   value: fixedIntensity,   active: !isDynamicMode },
+    { label: 'Dynamic', key: 'dynamicIntensity' as const, value: dynamicIntensity, active: isDynamicMode },
   ];
 
   return (
@@ -376,7 +430,7 @@ export default function App() {
               </div>
             )}
             <button
-              onClick={() => setShowHelp(true)}
+              onClick={() => setState(prev => ({ ...prev, showHelp: true }))}
               className="p-2 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
               aria-label="Keyboard shortcuts"
             >
@@ -390,7 +444,7 @@ export default function App() {
       {showHelp && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => setShowHelp(false)}
+          onClick={() => setState(prev => ({ ...prev, showHelp: false }))}
         >
           <div
             className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5"
@@ -399,7 +453,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Keyboard Shortcuts</h2>
               <button
-                onClick={() => setShowHelp(false)}
+                onClick={() => setState(prev => ({ ...prev, showHelp: false }))}
                 className="text-zinc-400 hover:text-zinc-100 transition-colors"
                 aria-label="Close"
               >
@@ -471,7 +525,7 @@ export default function App() {
               isIdle ? "opacity-0 pointer-events-none" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
             )}>
               <button
-                onClick={() => setSettings(s => ({ ...s, showDebug: !s.showDebug }))}
+                onClick={() => setState(prev => ({ ...prev, settings: { ...prev.settings, showDebug: !prev.settings.showDebug } }))}
                 className={cn(
                   "p-2 rounded-lg backdrop-blur-sm transition-colors",
                   showDebug ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
@@ -480,7 +534,7 @@ export default function App() {
                 <Bug className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setSettings(s => ({ ...s, isCropMode: !s.isCropMode }))}
+                onClick={() => setState(prev => ({ ...prev, settings: { ...prev.settings, isCropMode: !prev.settings.isCropMode } }))}
                 className={cn(
                   "p-2 rounded-lg backdrop-blur-sm transition-colors",
                   isCropMode ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
@@ -512,7 +566,7 @@ export default function App() {
             </div>
             <select
               value={selectedDeviceId}
-              onChange={(e) => setSettings(s => ({ ...s, selectedDeviceId: e.target.value }))}
+              onChange={(e) => setState(prev => ({ ...prev, settings: { ...prev.settings, selectedDeviceId: e.target.value } }))}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
             >
               {devices.length === 0 && <option value="">No cameras found</option>}
@@ -535,7 +589,7 @@ export default function App() {
               {/* Mode Toggle */}
               <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
                 <button
-                  onClick={() => setSettings(s => ({ ...s, isDynamicMode: true }))}
+                  onClick={() => setState(prev => ({ ...prev, settings: { ...prev.settings, isDynamicMode: true } }))}
                   className={cn(
                     "flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all",
                     isDynamicMode ? "bg-zinc-800 text-emerald-400 shadow-sm" : "text-zinc-500 hover:text-zinc-300"
@@ -545,7 +599,7 @@ export default function App() {
                   Dynamic
                 </button>
                 <button
-                  onClick={() => setSettings(s => ({ ...s, isDynamicMode: false }))}
+                  onClick={() => setState(prev => ({ ...prev, settings: { ...prev.settings, isDynamicMode: false } }))}
                   className={cn(
                     "flex-1 flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-md transition-all",
                     !isDynamicMode ? "bg-zinc-800 text-emerald-400 shadow-sm" : "text-zinc-500 hover:text-zinc-300"
@@ -576,7 +630,10 @@ export default function App() {
                     max="2"
                     step="0.01"
                     value={value}
-                    onChange={(e) => setSettings(s => ({ ...s, [key]: parseFloat(e.target.value) }))}
+                    onChange={(e) => setState(prev => ({
+                      ...prev,
+                      settings: { ...prev.settings, [key]: parseFloat(e.target.value) }
+                    }))}
                     className="w-full accent-emerald-500"
                   />
                 </div>
@@ -603,7 +660,13 @@ export default function App() {
                 <button
                   role="switch"
                   aria-checked={effects[effectKey]}
-                  onClick={() => setSettings(s => ({ ...s, effects: { ...s.effects, [effectKey]: !s.effects[effectKey] } }))}
+                  onClick={() => setState(prev => ({
+                    ...prev,
+                    settings: {
+                      ...prev.settings,
+                      effects: { ...prev.settings.effects, [effectKey]: !prev.settings.effects[effectKey] }
+                    }
+                  }))}
                   className={cn(
                     "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
                     effects[effectKey] ? "bg-emerald-500" : "bg-zinc-700"
