@@ -27,10 +27,10 @@ export const DEFAULT_AUDIO_GLITCH_EFFECTS: AudioGlitchEffects = {
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   enabled: true,
-  volume: 0.5,
+  volume: 0.7,
   minPitch: 200,
   maxPitch: 2000,
-  probability: 50,
+  probability: 80,
   effects: { ...DEFAULT_AUDIO_GLITCH_EFFECTS },
 };
 
@@ -51,9 +51,9 @@ export function hzToSlider(hz: number): number {
 
 // ─── Sound Engine ────────────────────────────────────────────────────────────
 
-const NOTE_DURATION = 0.08;       // seconds
-const MIN_NOTE_INTERVAL = 80;     // ms – per-region cooldown
-const MAX_POLYPHONY = 8;
+const NOTE_DURATION = 0.18;       // seconds – long enough to hear the tone
+const MIN_NOTE_INTERVAL = 100;    // ms – per-region cooldown
+const MAX_POLYPHONY = 12;
 
 export class SoundEngine {
   private audioCtx: AudioContext | null = null;
@@ -86,9 +86,21 @@ export class SoundEngine {
     this.delayNode.connect(this.masterGain);
 
     this.masterGain.connect(this.audioCtx.destination);
+
+    // Browsers suspend AudioContext until a user gesture.
+    // Attach a one-shot document-level listener so any click/key unlocks it.
+    const unlockAudio = () => {
+      this.resume();
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+      document.removeEventListener('pointerdown', unlockAudio);
+    };
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
+    document.addEventListener('pointerdown', unlockAudio);
   }
 
-  /** Must be called from a user-gesture handler to unlock the AudioContext. */
+  /** Resume the AudioContext (call from user-gesture handlers). */
   resume() {
     if (this.audioCtx?.state === 'suspended') {
       this.audioCtx.resume();
@@ -119,7 +131,13 @@ export class SoundEngine {
   // ── Per-frame entry point ────────────────────────────────────────────────
 
   processRegions(regions: RegionData[]) {
-    if (!this.settings.enabled || !this.audioCtx || this.audioCtx.state !== 'running') return;
+    if (!this.settings.enabled || !this.audioCtx) return;
+
+    // If still suspended, try to resume (will succeed if called during/after a gesture)
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+      return;
+    }
 
     for (const region of regions) {
       const key = `${region.personId}_${region.id}`;
@@ -130,7 +148,7 @@ export class SoundEngine {
   // ── Note triggering logic ────────────────────────────────────────────────
 
   private onMovement(regionKey: string, velocity: number) {
-    if (velocity < 0.05) return;
+    if (velocity < 0.02) return;
 
     // Probability gate
     if (Math.random() * 100 >= this.settings.probability) return;
@@ -164,7 +182,7 @@ export class SoundEngine {
 
     // Amplitude envelope (quick attack, exponential release)
     const noteGain = ctx.createGain();
-    noteGain.gain.setValueAtTime(0.15, now);
+    noteGain.gain.setValueAtTime(0.5, now);
     noteGain.gain.exponentialRampToValueAtTime(0.001, now + NOTE_DURATION);
 
     let currentNode: AudioNode = osc;
@@ -202,7 +220,7 @@ export class SoundEngine {
       const noiseSrc = ctx.createBufferSource();
       noiseSrc.buffer = noiseBuf;
       const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.08, now);
+      noiseGain.gain.setValueAtTime(0.25, now);
       noiseGain.gain.exponentialRampToValueAtTime(0.001, now + NOTE_DURATION);
       noiseSrc.connect(noiseGain);
       noiseGain.connect(noteGain);
