@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Settings, Activity, MonitorPlay, Bug, Maximize, Crop } from 'lucide-react';
+import { Camera, Settings, Activity, MonitorPlay, Bug, Maximize, Crop, Layers } from 'lucide-react';
 import { PoseDetectorService, RegionData } from './services/poseDetector';
-import { GlitchRenderer } from './services/glitchRenderer';
+import { GlitchRenderer, GlitchEffects, DEFAULT_GLITCH_EFFECTS } from './services/glitchRenderer';
 import { cn } from './lib/utils';
 
 export default function App() {
@@ -28,6 +28,10 @@ export default function App() {
   const [isCropMode, setIsCropMode] = useState(() => {
     const saved = localStorage.getItem('glitch-is-crop-mode');
     return saved !== null ? JSON.parse(saved) : false;
+  });
+  const [glitchEffects, setGlitchEffects] = useState<GlitchEffects>(() => {
+    const saved = localStorage.getItem('glitch-effects');
+    return saved !== null ? { ...DEFAULT_GLITCH_EFFECTS, ...JSON.parse(saved) } : DEFAULT_GLITCH_EFFECTS;
   });
   const [isIdle, setIsIdle] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -61,6 +65,7 @@ export default function App() {
   const isDynamicModeRef = useRef(isDynamicMode);
   const fixedIntensityRef = useRef(fixedIntensity);
   const showDebugRef = useRef(showDebug);
+  const glitchEffectsRef = useRef(glitchEffects);
 
   useEffect(() => {
     isDynamicModeRef.current = isDynamicMode;
@@ -80,6 +85,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('glitch-is-crop-mode', JSON.stringify(isCropMode));
   }, [isCropMode]);
+
+  useEffect(() => {
+    glitchEffectsRef.current = glitchEffects;
+    localStorage.setItem('glitch-effects', JSON.stringify(glitchEffects));
+  }, [glitchEffects]);
 
   useEffect(() => {
     if (selectedDeviceId) {
@@ -215,7 +225,8 @@ export default function App() {
               regions,
               isDynamicModeRef.current,
               fixedIntensityRef.current,
-              showDebugRef.current
+              showDebugRef.current,
+              glitchEffectsRef.current
             );
           } finally {
             isProcessing = false;
@@ -420,7 +431,46 @@ export default function App() {
             </div>
           </div>
 
+          {/* Glitch Effects */}
+          <div className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-4">
+            <div className="flex items-center gap-2 text-zinc-400 mb-2">
+              <Layers className="w-4 h-4" />
+              <h2 className="text-sm font-medium uppercase tracking-wider">Glitch Effects</h2>
+            </div>
 
+            {([
+              { key: 'colorInversion' as const, label: 'Color Inversion', description: 'Random inverted color blocks' },
+              { key: 'sliceDisplacement' as const, label: 'Slice Displacement', description: 'Horizontal slice shifts' },
+              { key: 'blockDisplacement' as const, label: 'Block Displacement', description: 'Randomly displaced blocks' },
+              { key: 'chromaticAberration' as const, label: 'Chromatic Aberration', description: 'RGB channel splitting' },
+            ]).map(({ key, label, description }) => (
+              <label
+                key={key}
+                className="flex items-center justify-between gap-3 group cursor-pointer"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">{label}</div>
+                  <div className="text-xs text-zinc-500">{description}</div>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={glitchEffects[key]}
+                  onClick={() => setGlitchEffects(prev => ({ ...prev, [key]: !prev[key] }))}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
+                    glitchEffects[key] ? "bg-emerald-500" : "bg-zinc-700"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transition-transform",
+                      glitchEffects[key] ? "translate-x-5" : "translate-x-0"
+                    )}
+                  />
+                </button>
+              </label>
+            ))}
+          </div>
 
         </div>
       </main>
