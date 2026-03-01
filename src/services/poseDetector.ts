@@ -44,6 +44,8 @@ export class PoseDetectorService {
   private previousCentroids: Record<string, Point> = {};
   private previousTime: number = 0;
   private smoothedVelocities: Record<string, number> = {};
+  private trackedPeople: { id: number; centroid: Point }[] = [];
+  private nextPersonId = 0;
   private offscreenCanvas = document.createElement('canvas');
   private offscreenCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
 
@@ -91,6 +93,50 @@ export class PoseDetectorService {
     }
   }
 
+  private assignStableIds(poses: poseDetection.Pose[]): number[] {
+    const MATCH_THRESHOLD = 150; // pixels
+
+    // Compute overall centroid for each pose
+    const centroids = poses.map(pose => {
+      const valid = pose.keypoints.filter(kp => kp.score && kp.score > 0.3);
+      if (valid.length === 0) return { x: 0, y: 0 };
+      const sum = valid.reduce((acc, kp) => ({ x: acc.x + kp.x, y: acc.y + kp.y }), { x: 0, y: 0 });
+      return { x: sum.x / valid.length, y: sum.y / valid.length };
+    });
+
+    const ids: number[] = new Array(poses.length).fill(-1);
+    const usedTracked = new Set<number>();
+
+    // Greedy nearest-neighbor matching
+    const pairs: { pi: number; ti: number; dist: number }[] = [];
+    for (let pi = 0; pi < centroids.length; pi++) {
+      for (let ti = 0; ti < this.trackedPeople.length; ti++) {
+        const dx = centroids[pi].x - this.trackedPeople[ti].centroid.x;
+        const dy = centroids[pi].y - this.trackedPeople[ti].centroid.y;
+        pairs.push({ pi, ti, dist: Math.sqrt(dx * dx + dy * dy) });
+      }
+    }
+    pairs.sort((a, b) => a.dist - b.dist);
+
+    for (const { pi, ti, dist } of pairs) {
+      if (ids[pi] !== -1 || usedTracked.has(ti) || dist > MATCH_THRESHOLD) continue;
+      ids[pi] = this.trackedPeople[ti].id;
+      usedTracked.add(ti);
+    }
+
+    // Assign new IDs for unmatched poses
+    for (let pi = 0; pi < poses.length; pi++) {
+      if (ids[pi] === -1) {
+        ids[pi] = this.nextPersonId++;
+      }
+    }
+
+    // Update tracked people for next frame
+    this.trackedPeople = ids.map((id, i) => ({ id, centroid: centroids[i] }));
+
+    return ids;
+  }
+
   async detectPoses(video: HTMLVideoElement): Promise<RegionData[]> {
     if (!this.detector || video.videoWidth === 0 || video.videoHeight === 0) return [];
 
@@ -110,11 +156,13 @@ export class PoseDetectorService {
 
     if (poses.length === 0) return [];
 
+    const personIds = this.assignStableIds(poses);
     const regions: RegionData[] = [];
     const activeKeys = new Set<string>();
 
-    for (const pose of poses) {
-      const personId = pose.id ?? 0;
+    for (let poseIdx = 0; poseIdx < poses.length; poseIdx++) {
+      const pose = poses[poseIdx];
+      const personId = personIds[poseIdx];
 
       for (const [regionId, keypointNames] of Object.entries(REGION_KEYPOINTS)) {
         const regionKeypoints = pose.keypoints.filter(
