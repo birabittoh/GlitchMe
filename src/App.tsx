@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, Bug, Camera, Crop, HelpCircle, Layers, Maximize, MonitorPlay, Settings, Volume2, X } from 'lucide-react';
 import { PoseDetectorService } from './services/poseDetector';
 import { GlitchRenderer, GlitchEffects, DEFAULT_GLITCH_EFFECTS } from './services/glitchRenderer';
-import { SoundEngine, AudioSettings, AudioGlitchEffects, DEFAULT_AUDIO_SETTINGS, DEFAULT_AUDIO_GLITCH_EFFECTS, sliderToHz, hzToSlider } from './services/soundEngine';
+import { SoundEngine, AudioSettings, AudioGlitchEffects, DEFAULT_AUDIO_SETTINGS, DEFAULT_AUDIO_GLITCH_EFFECTS, sliderToHz, hzToSlider, sliderToDuration, durationToSlider } from './services/soundEngine';
 import { cn } from './lib/utils';
 
 // ─── Single source of truth for keybindings ───────────────────────────────────
@@ -875,6 +875,74 @@ export default function App() {
                     }}
                     className="dual-range"
                     style={{ zIndex: hzToSlider(audio.maxPitch) <= 50 ? 5 : 3 }}
+                  />
+                </div>
+              </div>
+
+              {/* Duration Range (dual-handle slider, logarithmic) */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Duration Range</span>
+                  <span className="text-zinc-300 font-mono text-xs">
+                    {Math.round(audio.minDuration * 1000)}ms – {Math.round(audio.maxDuration * 1000)}ms
+                  </span>
+                </div>
+                <div className="relative h-6">
+                  {/* Track background */}
+                  <div className="absolute top-1/2 -translate-y-1/2 w-full h-1.5 bg-zinc-700 rounded-full" />
+                  {/* Active range highlight */}
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 h-1.5 bg-emerald-500/60 rounded-full"
+                    style={{
+                      left: `${durationToSlider(audio.minDuration)}%`,
+                      width: `${Math.max(0, durationToSlider(audio.maxDuration) - durationToSlider(audio.minDuration))}%`,
+                    }}
+                  />
+                  {/* Min handle */}
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={durationToSlider(audio.minDuration)}
+                    onChange={(e) => {
+                      const sec = sliderToDuration(parseFloat(e.target.value));
+                      setState(prev => ({
+                        ...prev,
+                        settings: {
+                          ...prev.settings,
+                          audio: {
+                            ...prev.settings.audio,
+                            minDuration: Math.min(sec, prev.settings.audio.maxDuration * 0.95)
+                          }
+                        }
+                      }));
+                    }}
+                    className="dual-range"
+                    style={{ zIndex: durationToSlider(audio.minDuration) > 50 ? 5 : 3 }}
+                  />
+                  {/* Max handle */}
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={durationToSlider(audio.maxDuration)}
+                    onChange={(e) => {
+                      const sec = sliderToDuration(parseFloat(e.target.value));
+                      setState(prev => ({
+                        ...prev,
+                        settings: {
+                          ...prev.settings,
+                          audio: {
+                            ...prev.settings.audio,
+                            maxDuration: Math.max(sec, prev.settings.audio.minDuration * 1.05)
+                          }
+                        }
+                      }));
+                    }}
+                    className="dual-range"
+                    style={{ zIndex: durationToSlider(audio.maxDuration) <= 50 ? 5 : 3 }}
                   />
                 </div>
               </div>

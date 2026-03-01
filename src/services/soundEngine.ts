@@ -14,6 +14,8 @@ export interface AudioSettings {
   volume: number;       // 0–1 (mapped logarithmically to gain)
   minPitch: number;     // Hz
   maxPitch: number;     // Hz
+  minDuration: number;  // seconds
+  maxDuration: number;  // seconds
   probability: number;  // 0–100
   effects: AudioGlitchEffects;
 }
@@ -30,6 +32,8 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   volume: 0.7,
   minPitch: 200,
   maxPitch: 2000,
+  minDuration: 0.05,
+  maxDuration: 0.30,
   probability: 80,
   effects: { ...DEFAULT_AUDIO_GLITCH_EFFECTS },
 };
@@ -37,7 +41,7 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
 // ─── Pitch helpers (logarithmic scale) ───────────────────────────────────────
 
 const SLIDER_MIN_FREQ = 50;
-const SLIDER_MAX_FREQ = 5000;
+const SLIDER_MAX_FREQ = 20000;
 
 /** Convert a 0–100 slider position to Hz on a logarithmic scale. */
 export function sliderToHz(position: number): number {
@@ -49,10 +53,24 @@ export function hzToSlider(hz: number): number {
   return 100 * Math.log(hz / SLIDER_MIN_FREQ) / Math.log(SLIDER_MAX_FREQ / SLIDER_MIN_FREQ);
 }
 
+// ─── Duration helpers (logarithmic scale) ────────────────────────────────────
+
+const SLIDER_MIN_DUR = 0.02;  // 20 ms
+const SLIDER_MAX_DUR = 1.0;   // 1000 ms
+
+/** Convert a 0–100 slider position to seconds on a logarithmic scale. */
+export function sliderToDuration(position: number): number {
+  return SLIDER_MIN_DUR * Math.pow(SLIDER_MAX_DUR / SLIDER_MIN_DUR, position / 100);
+}
+
+/** Convert seconds to a 0–100 slider position on a logarithmic scale. */
+export function durationToSlider(sec: number): number {
+  return 100 * Math.log(sec / SLIDER_MIN_DUR) / Math.log(SLIDER_MAX_DUR / SLIDER_MIN_DUR);
+}
+
 // ─── Sound Engine ────────────────────────────────────────────────────────────
 
-const NOTE_DURATION = 0.18;       // seconds – long enough to hear the tone
-const MIN_NOTE_INTERVAL = 100;    // ms – per-region cooldown
+const MIN_NOTE_INTERVAL = 60;     // ms – per-region cooldown
 const MAX_POLYPHONY = 12;
 
 export class SoundEngine {
@@ -123,9 +141,10 @@ export class SoundEngine {
     }
   }
 
-  /** Cubic mapping gives a perceptually-linear (logarithmic) volume feel. */
+  /** Quadratic mapping scaled to allow strong output at max volume. */
   private volumeToGain(volume: number): number {
-    return volume * volume * volume;
+    // 0 → 0,  0.5 → 0.75,  0.7 → 1.47,  1.0 → 3.0
+    return volume * volume * 3;
   }
 
   // ── Per-frame entry point ────────────────────────────────────────────────
@@ -170,7 +189,10 @@ export class SoundEngine {
   private playNote(velocity: number) {
     const ctx = this.audioCtx!;
     const now = ctx.currentTime;
-    const { minPitch, maxPitch, effects } = this.settings;
+    const { minPitch, maxPitch, minDuration, maxDuration, effects } = this.settings;
+
+    // Random duration within the configured range
+    const dur = minDuration + Math.random() * (maxDuration - minDuration);
 
     // Logarithmic frequency mapping: low velocity → minPitch, high → maxPitch
     const freq = minPitch * Math.pow(maxPitch / Math.max(minPitch, 1), velocity);
@@ -183,7 +205,7 @@ export class SoundEngine {
     // Amplitude envelope (quick attack, exponential release)
     const noteGain = ctx.createGain();
     noteGain.gain.setValueAtTime(0.5, now);
-    noteGain.gain.exponentialRampToValueAtTime(0.001, now + NOTE_DURATION);
+    noteGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
 
     let currentNode: AudioNode = osc;
 
@@ -196,7 +218,7 @@ export class SoundEngine {
       lfo.connect(lfoGain);
       lfoGain.connect(osc.frequency);
       lfo.start(now);
-      lfo.stop(now + NOTE_DURATION);
+      lfo.stop(now + dur);
     }
 
     // ── Distortion ─────────────────────────────────────────────────────
@@ -212,7 +234,7 @@ export class SoundEngine {
 
     // ── Noise layer ────────────────────────────────────────────────────
     if (effects.noise) {
-      const bufLen = Math.ceil(ctx.sampleRate * NOTE_DURATION);
+      const bufLen = Math.ceil(ctx.sampleRate * dur);
       const noiseBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
       const data = noiseBuf.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
@@ -221,11 +243,11 @@ export class SoundEngine {
       noiseSrc.buffer = noiseBuf;
       const noiseGain = ctx.createGain();
       noiseGain.gain.setValueAtTime(0.25, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + NOTE_DURATION);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
       noiseSrc.connect(noiseGain);
       noiseGain.connect(noteGain);
       noiseSrc.start(now);
-      noiseSrc.stop(now + NOTE_DURATION);
+      noiseSrc.stop(now + dur);
     }
 
     // ── Echo send ──────────────────────────────────────────────────────
@@ -238,7 +260,7 @@ export class SoundEngine {
     // ── Start / cleanup ────────────────────────────────────────────────
     this.activeNotes++;
     osc.start(now);
-    osc.stop(now + NOTE_DURATION);
+    osc.stop(now + dur);
     osc.onended = () => {
       this.activeNotes = Math.max(0, this.activeNotes - 1);
     };
