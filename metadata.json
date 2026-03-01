@@ -1,0 +1,5 @@
+{
+  "name": "GlitchMe",
+  "description": "A webcam glitch web app that applies visual effects to detected body parts based on movement velocity.",
+  "requestFramePermissions": ["camera"]
+}
