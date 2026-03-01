@@ -23,8 +23,9 @@ export const EFFECT_DEFS: Array<{
 export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
   { key: '1 – 9', description: 'Select input device by number' },
   { key: 'Space', description: 'Toggle dynamic / fixed mode' },
-  { key: 'Z / X', description: 'Decrease / increase dynamic intensity by 5%' },
+  { key: 'Z / X', description: 'Decrease / increase current intensity by 5%' },
   { key: 'C / V', description: 'Decrease / increase fixed intensity by 5%' },
+  { key: 'B / N', description: 'Decrease / increase dynamic intensity by 5%' },
   { key: 'P',     description: 'Toggle all effects on / off' },
   { key: 'F',     description: 'Toggle fullscreen' },
   { key: 'D',     description: 'Toggle debug mode' },
@@ -186,13 +187,17 @@ export default function App() {
           setIsDynamicMode(prev => !prev);
           break;
         case 'z':
-        case 'Z':
-          setDynamicIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
+        case 'Z': {
+          const setter = isDynamicModeRef.current ? setDynamicIntensity : setFixedIntensity;
+          setter(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
           break;
+        }
         case 'x':
-        case 'X':
-          setDynamicIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
+        case 'X': {
+          const setter = isDynamicModeRef.current ? setDynamicIntensity : setFixedIntensity;
+          setter(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
           break;
+        }
         case 'c':
         case 'C':
           setFixedIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
@@ -200,6 +205,14 @@ export default function App() {
         case 'v':
         case 'V':
           setFixedIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
+          break;
+        case 'b':
+        case 'B':
+          setDynamicIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
+          break;
+        case 'n':
+        case 'N':
+          setDynamicIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
           break;
         case 'p':
         case 'P':
@@ -367,8 +380,8 @@ export default function App() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const intensitySliders = [
-    { label: 'Dynamic Intensity', value: dynamicIntensity, setter: setDynamicIntensity, active: isDynamicMode },
-    { label: 'Fixed Intensity',   value: fixedIntensity,   setter: setFixedIntensity,   active: !isDynamicMode },
+    { label: 'Dynamic', value: dynamicIntensity, setter: setDynamicIntensity, active: isDynamicMode },
+    { label: 'Fixed',   value: fixedIntensity,   setter: setFixedIntensity,   active: !isDynamicMode },
   ];
 
   return (
@@ -576,6 +589,7 @@ export default function App() {
               </p>
 
               {/* Intensity Sliders */}
+              <div className="text-sm text-zinc-400">Intensity</div>
               {intensitySliders.map(({ label, value, setter, active }) => (
                 <div key={label} className={cn("space-y-2 transition-opacity duration-200", !active && "opacity-40")}>
                   <div className="flex justify-between text-sm">
