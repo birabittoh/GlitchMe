@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Settings, Activity, MonitorPlay, Bug, Maximize } from 'lucide-react';
+import { Camera, Settings, Activity, MonitorPlay, Bug, Maximize, Crop } from 'lucide-react';
 import { PoseDetectorService, RegionData } from './services/poseDetector';
 import { GlitchRenderer } from './services/glitchRenderer';
 import { cn } from './lib/utils';
@@ -14,6 +14,7 @@ export default function App() {
   const [isDynamicMode, setIsDynamicMode] = useState(true);
   const [fixedIntensity, setFixedIntensity] = useState(0.5);
   const [showDebug, setShowDebug] = useState(false);
+  const [isCropMode, setIsCropMode] = useState(false);
   
   const isDynamicModeRef = useRef(isDynamicMode);
   const fixedIntensityRef = useRef(fixedIntensity);
@@ -231,17 +232,29 @@ export default function App() {
                 {/* Visible canvas for rendering */}
                 <canvas 
                   ref={canvasRef}
-                  className="w-full h-full object-contain"
+                  className={cn(
+                    "w-full h-full transition-all duration-300",
+                    isCropMode ? "object-cover" : "object-contain"
+                  )}
                 />
                 
-                {/* Fullscreen Button */}
-                <button
-                  onClick={toggleFullScreen}
-                  className="absolute bottom-4 right-4 p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Toggle Fullscreen"
-                >
-                  <Maximize className="w-5 h-5" />
-                </button>
+                {/* Viewport Controls */}
+                <div className="absolute bottom-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => setIsCropMode(!isCropMode)}
+                    className="p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm transition-colors"
+                    title={isCropMode ? "Fit to screen" : "Fill screen"}
+                  >
+                    <Crop className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={toggleFullScreen}
+                    className="p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm transition-colors"
+                    title="Toggle Fullscreen"
+                  >
+                    <Maximize className="w-5 h-5" />
+                  </button>
+                </div>
               </>
             )}
           </div>
