@@ -11,7 +11,7 @@ export const DEFAULT_GLITCH_EFFECTS: GlitchEffects = {
   colorInversion: true,
   sliceDisplacement: true,
   blockDisplacement: true,
-  chromaticAberration: false,
+  chromaticAberration: true,
 };
 
 export class GlitchRenderer {
