@@ -40,7 +40,7 @@ export class GlitchRenderer {
 
       // Apply glitches to regions
       for (const region of regions) {
-        const intensity = isDynamic ? region.smoothedVelocity : fixedIntensity;
+        const intensity = isDynamic ? region.smoothedVelocity * fixedIntensity : fixedIntensity;
 
         if (intensity > 0.05) {
           this.applyGlitch(video, region, intensity);

@@ -12,9 +12,37 @@ export default function App() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [isDynamicMode, setIsDynamicMode] = useState(true);
-  const [fixedIntensity, setFixedIntensity] = useState(0.5);
+  const [fixedIntensity, setFixedIntensity] = useState(1.0);
   const [showDebug, setShowDebug] = useState(false);
   const [isCropMode, setIsCropMode] = useState(false);
+  const [isIdle, setIsIdle] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const idleTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const handleMouseMove = () => {
+    setIsIdle(false);
+    if (idleTimeoutRef.current !== null) {
+      window.clearTimeout(idleTimeoutRef.current);
+    }
+    idleTimeoutRef.current = window.setTimeout(() => {
+      setIsIdle(true);
+    }, 2000);
+  };
+
+  const handleMouseLeave = () => {
+    setIsIdle(false);
+    if (idleTimeoutRef.current !== null) {
+      window.clearTimeout(idleTimeoutRef.current);
+    }
+  };
   
   const isDynamicModeRef = useRef(isDynamicMode);
   const fixedIntensityRef = useRef(fixedIntensity);
@@ -213,7 +241,12 @@ export default function App() {
         <div className="space-y-4">
           <div 
             ref={containerRef}
-            className="relative aspect-video bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl group"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            className={cn(
+              "relative aspect-video bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl group",
+              isIdle && "cursor-none"
+            )}
           >
             {error ? (
               <div className="absolute inset-0 flex items-center justify-center text-red-400 p-6 text-center">
@@ -239,18 +272,34 @@ export default function App() {
                 />
                 
                 {/* Viewport Controls */}
-                <div className="absolute bottom-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className={cn(
+                  "absolute bottom-4 right-4 flex items-center gap-2 transition-opacity duration-300",
+                  isIdle ? "opacity-0" : "opacity-0 group-hover:opacity-100"
+                )}>
+                  <button
+                    onClick={() => setShowDebug(!showDebug)}
+                    className={cn(
+                      "p-2 rounded-lg backdrop-blur-sm transition-colors",
+                      showDebug ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
+                    )}
+                  >
+                    <Bug className="w-5 h-5" />
+                  </button>
                   <button
                     onClick={() => setIsCropMode(!isCropMode)}
-                    className="p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm transition-colors"
-                    title={isCropMode ? "Fit to screen" : "Fill screen"}
+                    className={cn(
+                      "p-2 rounded-lg backdrop-blur-sm transition-colors",
+                      isCropMode ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
+                    )}
                   >
                     <Crop className="w-5 h-5" />
                   </button>
                   <button
                     onClick={toggleFullScreen}
-                    className="p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm transition-colors"
-                    title="Toggle Fullscreen"
+                    className={cn(
+                      "p-2 rounded-lg backdrop-blur-sm transition-colors",
+                      isFullscreen ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
+                    )}
                   >
                     <Maximize className="w-5 h-5" />
                   </button>
@@ -318,23 +367,20 @@ export default function App() {
 
               <p className="text-xs text-zinc-500 leading-relaxed">
                 {isDynamicMode 
-                  ? "Glitch intensity is driven by movement velocity. Move faster for stronger effects." 
+                  ? "Glitch intensity is driven by movement velocity. Use the slider to multiply the effect." 
                   : "Glitch intensity is fixed and applied uniformly to all detected body parts."}
               </p>
 
-              {/* Fixed Intensity Slider */}
-              <div className={cn(
-                "space-y-3 transition-opacity duration-300",
-                isDynamicMode ? "opacity-50 pointer-events-none" : "opacity-100"
-              )}>
+              {/* Intensity Slider */}
+              <div className="space-y-3 transition-opacity duration-300">
                 <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Intensity</span>
+                  <span className="text-zinc-400">{isDynamicMode ? "Intensity Multiplier" : "Intensity"}</span>
                   <span className="text-zinc-300 font-mono">{Math.round(fixedIntensity * 100)}%</span>
                 </div>
                 <input 
                   type="range" 
                   min="0" 
-                  max="1" 
+                  max="2" 
                   step="0.01"
                   value={fixedIntensity}
                   onChange={(e) => setFixedIntensity(parseFloat(e.target.value))}
@@ -344,36 +390,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Debug Settings */}
-          <div className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-4">
-            <div className="flex items-center gap-2 text-zinc-400 mb-2">
-              <Bug className="w-4 h-4" />
-              <h2 className="text-sm font-medium uppercase tracking-wider">Developer</h2>
-            </div>
-            
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className="relative flex items-center">
-                <input 
-                  type="checkbox" 
-                  checked={showDebug}
-                  onChange={(e) => setShowDebug(e.target.checked)}
-                  className="sr-only"
-                />
-                <div className={cn(
-                  "w-10 h-6 rounded-full transition-colors",
-                  showDebug ? "bg-emerald-500" : "bg-zinc-800"
-                )}>
-                  <div className={cn(
-                    "absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform",
-                    showDebug ? "translate-x-4" : "translate-x-0"
-                  )} />
-                </div>
-              </div>
-              <span className="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">
-                Show Debug Overlay
-              </span>
-            </label>
-          </div>
+
 
         </div>
       </main>
