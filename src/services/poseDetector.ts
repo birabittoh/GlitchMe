@@ -1,5 +1,6 @@
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import * as tf from '@tensorflow/tfjs-core';
+import * as tfc from '@tensorflow/tfjs-converter';
 // Register WebGL backend.
 import '@tensorflow/tfjs-backend-webgl';
 
@@ -48,12 +49,43 @@ export class PoseDetectorService {
   async initialize() {
     await tf.setBackend('webgl');
     await tf.ready();
+
+    const MOVENET_URL = 'https://tfhub.dev/google/tfjs-model/movenet/singlepose/lightning/4';
+    const MODEL_CACHE_KEY = 'movenet-lightning-v4';
+    const MODEL_CACHE_URL = `indexeddb://${MODEL_CACHE_KEY}`;
+
+    try {
+      const models = await tf.io.listModels();
+      if (!models[MODEL_CACHE_URL]) {
+        console.log('Model not found in cache. Downloading and caching to IndexedDB...');
+        const graphModel = await tfc.loadGraphModel(MOVENET_URL, { fromTFHub: true });
+        await graphModel.save(MODEL_CACHE_URL);
+        graphModel.dispose();
+        console.log('Model cached successfully.');
+      } else {
+        console.log('Model found in IndexedDB cache.');
+      }
+    } catch (err) {
+      console.error('Failed to cache model to IndexedDB:', err);
+      // Fallback to loading from URL directly if caching fails
+    }
+
     const model = poseDetection.SupportedModels.MoveNet;
     const detectorConfig = {
       modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
       enableSmoothing: true,
+      modelUrl: MODEL_CACHE_URL
     };
-    this.detector = await poseDetection.createDetector(model, detectorConfig);
+
+    try {
+      this.detector = await poseDetection.createDetector(model, detectorConfig);
+    } catch (err) {
+      console.warn('Failed to load model from IndexedDB, falling back to URL...', err);
+      this.detector = await poseDetection.createDetector(model, {
+        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        enableSmoothing: true,
+      });
+    }
   }
 
   async detectPoses(video: HTMLVideoElement): Promise<RegionData[]> {
