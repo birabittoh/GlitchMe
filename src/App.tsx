@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, Settings, Activity, MonitorPlay, Bug } from 'lucide-react';
+import { Camera, Settings, Activity, MonitorPlay, Bug, Maximize } from 'lucide-react';
 import { PoseDetectorService, RegionData } from './services/poseDetector';
 import { GlitchRenderer } from './services/glitchRenderer';
 import { cn } from './lib/utils';
@@ -7,6 +7,7 @@ import { cn } from './lib/utils';
 export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
@@ -36,6 +37,14 @@ export default function App() {
   const detectorRef = useRef<PoseDetectorService | null>(null);
   const rendererRef = useRef<GlitchRenderer | null>(null);
   const requestRef = useRef<number>(0);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().catch(console.error);
+    } else {
+      document.exitFullscreen().catch(console.error);
+    }
+  };
 
   // Initialize devices
   useEffect(() => {
@@ -77,24 +86,37 @@ export default function App() {
     if (!selectedDeviceId || !videoRef.current) return;
 
     let stream: MediaStream | null = null;
+    let isMounted = true;
 
     async function startStream() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
+        const newStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: selectedDeviceId } }
         });
+        
+        if (!isMounted) {
+          // If unmounted while waiting for stream, stop it immediately
+          newStream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        stream = newStream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(console.error);
         }
       } catch (err) {
-        setError('Failed to start video stream.');
-        console.error(err);
+        if (isMounted) {
+          setError('Failed to start video stream.');
+          console.error(err);
+        }
       }
     }
 
     startStream();
 
     return () => {
+      isMounted = false;
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
@@ -113,30 +135,50 @@ export default function App() {
     }
     const renderer = rendererRef.current;
 
-    const renderLoop = async () => {
-      if (video.readyState === video.HAVE_ENOUGH_DATA && detectorRef.current) {
-        // Resize canvas to match video
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          renderer.resize(video.videoWidth, video.videoHeight);
-        }
+    let isProcessing = false;
 
-        const regions = await detectorRef.current.detectPoses(video);
-        
-        // Use refs for current state to avoid dependency loop in useEffect
-        renderer.render(
-          video, 
-          regions, 
-          isDynamicModeRef.current, 
-          fixedIntensityRef.current, 
-          showDebugRef.current
-        );
+    const renderLoop = async () => {
+      try {
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && detectorRef.current && !isProcessing) {
+          isProcessing = true;
+          try {
+            // Resize canvas to match video
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+              renderer.resize(video.videoWidth, video.videoHeight);
+            }
+
+            const regions = await detectorRef.current.detectPoses(video);
+            
+            // Use refs for current state to avoid dependency loop in useEffect
+            renderer.render(
+              video, 
+              regions, 
+              isDynamicModeRef.current, 
+              fixedIntensityRef.current, 
+              showDebugRef.current
+            );
+          } finally {
+            isProcessing = false;
+          }
+        }
+      } catch (err) {
+        console.error("Error in render loop:", err);
+        try {
+          // Fallback: just render the video without glitches
+          if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+            renderer.resize(video.videoWidth, video.videoHeight);
+          }
+          renderer.render(video, [], false, 0, false);
+        } catch (fallbackErr) {
+          console.error("Fallback render failed:", fallbackErr);
+        }
+        isProcessing = false;
       }
       requestRef.current = requestAnimationFrame(renderLoop);
     };
 
-    video.addEventListener('loadeddata', () => {
-      requestRef.current = requestAnimationFrame(renderLoop);
-    });
+    // Start loop immediately
+    requestRef.current = requestAnimationFrame(renderLoop);
 
     return () => {
       cancelAnimationFrame(requestRef.current);
@@ -154,7 +196,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4">
-            {!isModelLoaded && (
+            {!isModelLoaded && !error && (
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <div className="w-4 h-4 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
                 Loading AI Model...
@@ -168,7 +210,10 @@ export default function App() {
         
         {/* Main Viewport */}
         <div className="space-y-4">
-          <div className="relative aspect-video bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
+          <div 
+            ref={containerRef}
+            className="relative aspect-video bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl group"
+          >
             {error ? (
               <div className="absolute inset-0 flex items-center justify-center text-red-400 p-6 text-center">
                 {error}
@@ -181,13 +226,22 @@ export default function App() {
                   autoPlay 
                   playsInline 
                   muted 
-                  className="hidden"
+                  className="absolute opacity-0 pointer-events-none"
                 />
                 {/* Visible canvas for rendering */}
                 <canvas 
                   ref={canvasRef}
                   className="w-full h-full object-contain"
                 />
+                
+                {/* Fullscreen Button */}
+                <button
+                  onClick={toggleFullScreen}
+                  className="absolute bottom-4 right-4 p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Toggle Fullscreen"
+                >
+                  <Maximize className="w-5 h-5" />
+                </button>
               </>
             )}
           </div>

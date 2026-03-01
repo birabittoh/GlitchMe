@@ -57,7 +57,7 @@ export class PoseDetectorService {
   }
 
   async detectPoses(video: HTMLVideoElement): Promise<RegionData[]> {
-    if (!this.detector) return [];
+    if (!this.detector || video.videoWidth === 0 || video.videoHeight === 0) return [];
 
     if (this.offscreenCanvas.width !== video.videoWidth || this.offscreenCanvas.height !== video.videoHeight) {
       this.offscreenCanvas.width = video.videoWidth;

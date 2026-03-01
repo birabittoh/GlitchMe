@@ -30,28 +30,29 @@ export class GlitchRenderer {
     const { width, height } = this.canvas;
 
     this.ctx.save();
-    
-    // Flip horizontally for mirror effect
-    this.ctx.translate(width, 0);
-    this.ctx.scale(-1, 1);
+    try {
+      // Flip horizontally for mirror effect
+      this.ctx.translate(width, 0);
+      this.ctx.scale(-1, 1);
 
-    // Draw base video frame
-    this.ctx.drawImage(video, 0, 0, width, height);
+      // Draw base video frame
+      this.ctx.drawImage(video, 0, 0, width, height);
 
-    // Apply glitches to regions
-    for (const region of regions) {
-      const intensity = isDynamic ? region.smoothedVelocity : fixedIntensity;
+      // Apply glitches to regions
+      for (const region of regions) {
+        const intensity = isDynamic ? region.smoothedVelocity : fixedIntensity;
 
-      if (intensity > 0.05) {
-        this.applyGlitch(video, region, intensity);
+        if (intensity > 0.05) {
+          this.applyGlitch(video, region, intensity);
+        }
+
+        if (showDebug) {
+          this.drawDebug(region, intensity);
+        }
       }
-
-      if (showDebug) {
-        this.drawDebug(region, intensity);
-      }
+    } finally {
+      this.ctx.restore();
     }
-
-    this.ctx.restore();
   }
 
   private applyGlitch(video: HTMLVideoElement, region: RegionData, intensity: number) {
@@ -87,6 +88,9 @@ export class GlitchRenderer {
         
         const sliceY = y + i * sliceHeight;
         const sliceH = Math.min(sliceHeight, (y + h) - sliceY);
+        
+        if (sliceH <= 0) continue;
+
         const displacement = (Math.random() - 0.5) * intensity * 40; // Max 20px displacement
         
         // Draw the displaced slice from the original video
@@ -102,6 +106,9 @@ export class GlitchRenderer {
     for (let i = 0; i < numBlocks; i++) {
         const blockW = Math.random() * w * 0.5;
         const blockH = Math.random() * h * 0.5;
+        
+        if (blockW <= 0 || blockH <= 0) continue;
+
         const blockX = x + Math.random() * (w - blockW);
         const blockY = y + Math.random() * (h - blockH);
         const displacementX = (Math.random() - 0.5) * intensity * 60;
@@ -139,13 +146,16 @@ export class GlitchRenderer {
 
     // Draw label and intensity
     this.ctx.save();
-    // Unflip the canvas for text
-    this.ctx.scale(-1, 1);
-    this.ctx.fillStyle = 'white';
-    this.ctx.font = '12px monospace';
-    // The x coordinate needs to be mirrored back: -(xMin) - textWidth
-    // But we don't know text width easily. Let's just use -(xMin + width)
-    this.ctx.fillText(`${region.id}: ${intensity.toFixed(2)}`, -(xMin + width), yMin - 5);
-    this.ctx.restore();
+    try {
+      // Unflip the canvas for text
+      this.ctx.scale(-1, 1);
+      this.ctx.fillStyle = 'white';
+      this.ctx.font = '12px monospace';
+      // The x coordinate needs to be mirrored back: -(xMin) - textWidth
+      // But we don't know text width easily. Let's just use -(xMin + width)
+      this.ctx.fillText(`${region.id}: ${intensity.toFixed(2)}`, -(xMin + width), yMin - 5);
+    } finally {
+      this.ctx.restore();
+    }
   }
 }
