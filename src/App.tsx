@@ -27,7 +27,7 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  const handleMouseMove = () => {
+  const handleInteraction = () => {
     setIsIdle(false);
     if (idleTimeoutRef.current !== null) {
       window.clearTimeout(idleTimeoutRef.current);
@@ -241,71 +241,70 @@ export default function App() {
         <div className="space-y-4">
           <div
             ref={containerRef}
-            onMouseMove={handleMouseMove}
+            onMouseMove={handleInteraction}
             onMouseLeave={handleMouseLeave}
+            onTouchStart={handleInteraction}
             className={cn(
               "relative aspect-video bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl group",
               isIdle && "cursor-none"
             )}
           >
-            {error ? (
-              <div className="absolute inset-0 flex items-center justify-center text-red-400 p-6 text-center">
+            {error && (
+              <div className="absolute inset-0 flex items-center justify-center text-red-400 p-6 text-center z-0">
                 {error}
               </div>
-            ) : (
-              <>
-                {/* Hidden video element for source */}
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="absolute opacity-0 pointer-events-none"
-                />
-                {/* Visible canvas for rendering */}
-                <canvas
-                  ref={canvasRef}
-                  className={cn(
-                    "w-full h-full transition-all duration-300",
-                    isCropMode ? "object-cover" : "object-contain"
-                  )}
-                />
-
-                {/* Viewport Controls */}
-                <div className={cn(
-                  "absolute bottom-4 right-4 flex items-center gap-2 transition-opacity duration-300",
-                  isIdle ? "opacity-0" : "opacity-0 group-hover:opacity-100"
-                )}>
-                  <button
-                    onClick={() => setShowDebug(!showDebug)}
-                    className={cn(
-                      "p-2 rounded-lg backdrop-blur-sm transition-colors",
-                      showDebug ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
-                    )}
-                  >
-                    <Bug className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setIsCropMode(!isCropMode)}
-                    className={cn(
-                      "p-2 rounded-lg backdrop-blur-sm transition-colors",
-                      isCropMode ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
-                    )}
-                  >
-                    <Crop className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={toggleFullScreen}
-                    className={cn(
-                      "p-2 rounded-lg backdrop-blur-sm transition-colors",
-                      isFullscreen ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
-                    )}
-                  >
-                    <Maximize className="w-5 h-5" />
-                  </button>
-                </div>
-              </>
             )}
+
+            {/* Hidden video element for source */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute opacity-0 pointer-events-none"
+            />
+            {/* Visible canvas for rendering */}
+            <canvas
+              ref={canvasRef}
+              className={cn(
+                "w-full h-full transition-all duration-300",
+                isCropMode ? "object-cover" : "object-contain"
+              )}
+            />
+
+            {/* Viewport Controls */}
+            <div className={cn(
+              "absolute bottom-4 right-4 flex items-center gap-2 transition-opacity duration-300 z-10",
+              isIdle ? "opacity-0 pointer-events-none" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+            )}>
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className={cn(
+                  "p-2 rounded-lg backdrop-blur-sm transition-colors",
+                  showDebug ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
+                )}
+              >
+                <Bug className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => setIsCropMode(!isCropMode)}
+                className={cn(
+                  "p-2 rounded-lg backdrop-blur-sm transition-colors",
+                  isCropMode ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
+                )}
+              >
+                <Crop className="w-5 h-5" />
+              </button>
+              <button
+                onClick={toggleFullScreen}
+                className={cn(
+                  "p-2 rounded-lg backdrop-blur-sm transition-colors",
+                  isFullscreen ? "bg-emerald-500/80 text-white" : "bg-black/50 hover:bg-black/80 text-white"
+                )}
+              >
+                <Maximize className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
