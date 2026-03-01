@@ -23,8 +23,9 @@ export const EFFECT_DEFS: Array<{
 export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
   { key: '1 – 9', description: 'Select input device by number' },
   { key: 'Space', description: 'Toggle dynamic / fixed mode' },
-  { key: 'Z',     description: 'Decrease current intensity by 5%' },
-  { key: 'X',     description: 'Increase current intensity by 5%' },
+  { key: 'Z / X', description: 'Decrease / increase dynamic intensity by 5%' },
+  { key: 'C / V', description: 'Decrease / increase fixed intensity by 5%' },
+  { key: 'P',     description: 'Toggle all effects on / off' },
   { key: 'F',     description: 'Toggle fullscreen' },
   { key: 'D',     description: 'Toggle debug mode' },
   { key: 'S',     description: 'Toggle crop mode' },
@@ -186,19 +187,32 @@ export default function App() {
           break;
         case 'z':
         case 'Z':
-          if (isDynamicModeRef.current) {
-            setDynamicIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
-          } else {
-            setFixedIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
-          }
+          setDynamicIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
           break;
         case 'x':
         case 'X':
-          if (isDynamicModeRef.current) {
-            setDynamicIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
-          } else {
-            setFixedIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
-          }
+          setDynamicIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
+          break;
+        case 'c':
+        case 'C':
+          setFixedIntensity(prev => Math.max(0, parseFloat((prev - INTENSITY_STEP).toFixed(2))));
+          break;
+        case 'v':
+        case 'V':
+          setFixedIntensity(prev => Math.min(2, parseFloat((prev + INTENSITY_STEP).toFixed(2))));
+          break;
+        case 'p':
+        case 'P':
+          setGlitchEffects(prev => {
+            const anyOn = Object.values(prev).some(Boolean);
+            const next = !anyOn;
+            return {
+              colorInversion: next,
+              sliceDisplacement: next,
+              blockDisplacement: next,
+              chromaticAberration: next,
+            };
+          });
           break;
         case 'f':
         case 'F':
