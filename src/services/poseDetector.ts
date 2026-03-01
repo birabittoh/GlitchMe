@@ -73,10 +73,11 @@ export class PoseDetectorService {
     }
 
     const model = poseDetection.SupportedModels.MoveNet;
-    const detectorConfig = {
+    const detectorConfig: poseDetection.MoveNetModelConfig = {
       modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
       enableSmoothing: true,
       enableTracking: true,
+      trackerType: poseDetection.TrackerType.BoundingBox,
       modelUrl: MODEL_CACHE_URL
     };
 
@@ -88,6 +89,7 @@ export class PoseDetectorService {
         modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
         enableSmoothing: true,
         enableTracking: true,
+        trackerType: poseDetection.TrackerType.BoundingBox,
       });
     }
   }
