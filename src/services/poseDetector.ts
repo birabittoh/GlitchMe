@@ -20,6 +20,7 @@ export interface BoundingBox {
 
 export interface RegionData {
   id: BodyRegion;
+  personId: number;
   keypoints: poseDetection.Keypoint[];
   centroid: Point;
   boundingBox: BoundingBox;
@@ -186,6 +187,7 @@ export class PoseDetectorService {
 
         allRegions.push({
           id: regionId as BodyRegion,
+          personId,
           keypoints: regionKeypoints,
           centroid,
           boundingBox,
