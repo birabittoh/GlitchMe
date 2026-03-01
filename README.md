@@ -2,8 +2,6 @@
 
 GlitchMe is a real-time webcam experiment that transforms your movements into dynamic glitch art. Using AI-powered pose detection, it identifies body parts and applies unique visual effects based on your movement velocity.
 
-![GlitchMe Banner](https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6)
-
 ## Features
 
 - **Real-time AI Pose Detection**: Utilizes TensorFlow.js and the MoveNet model to track body movements with high precision and low latency.
