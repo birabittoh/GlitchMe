@@ -11,8 +11,14 @@ export default function App() {
 
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  const [isDynamicMode, setIsDynamicMode] = useState(true);
-  const [fixedIntensity, setFixedIntensity] = useState(1.0);
+  const [isDynamicMode, setIsDynamicMode] = useState(() => {
+    const saved = localStorage.getItem('glitch-dynamic-mode');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [fixedIntensity, setFixedIntensity] = useState(() => {
+    const saved = localStorage.getItem('glitch-intensity');
+    return saved !== null ? parseFloat(saved) : 1.0;
+  });
   const [showDebug, setShowDebug] = useState(false);
   const [isCropMode, setIsCropMode] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
@@ -50,10 +56,12 @@ export default function App() {
 
   useEffect(() => {
     isDynamicModeRef.current = isDynamicMode;
+    localStorage.setItem('glitch-dynamic-mode', JSON.stringify(isDynamicMode));
   }, [isDynamicMode]);
 
   useEffect(() => {
     fixedIntensityRef.current = fixedIntensity;
+    localStorage.setItem('glitch-intensity', fixedIntensity.toString());
   }, [fixedIntensity]);
 
   useEffect(() => {
