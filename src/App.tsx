@@ -10,7 +10,9 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>(() => {
+    return localStorage.getItem('glitch-selected-device-id') || '';
+  });
   const [isDynamicMode, setIsDynamicMode] = useState(() => {
     const saved = localStorage.getItem('glitch-dynamic-mode');
     return saved !== null ? JSON.parse(saved) : true;
@@ -19,8 +21,14 @@ export default function App() {
     const saved = localStorage.getItem('glitch-intensity');
     return saved !== null ? parseFloat(saved) : 1.0;
   });
-  const [showDebug, setShowDebug] = useState(false);
-  const [isCropMode, setIsCropMode] = useState(false);
+  const [showDebug, setShowDebug] = useState(() => {
+    const saved = localStorage.getItem('glitch-show-debug');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
+  const [isCropMode, setIsCropMode] = useState(() => {
+    const saved = localStorage.getItem('glitch-is-crop-mode');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
   const [isIdle, setIsIdle] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const idleTimeoutRef = useRef<number | null>(null);
@@ -66,7 +74,18 @@ export default function App() {
 
   useEffect(() => {
     showDebugRef.current = showDebug;
+    localStorage.setItem('glitch-show-debug', JSON.stringify(showDebug));
   }, [showDebug]);
+
+  useEffect(() => {
+    localStorage.setItem('glitch-is-crop-mode', JSON.stringify(isCropMode));
+  }, [isCropMode]);
+
+  useEffect(() => {
+    if (selectedDeviceId) {
+      localStorage.setItem('glitch-selected-device-id', selectedDeviceId);
+    }
+  }, [selectedDeviceId]);
 
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +111,11 @@ export default function App() {
         const videoDevices = allDevices.filter(d => d.kind === 'videoinput');
         setDevices(videoDevices);
         if (videoDevices.length > 0) {
-          setSelectedDeviceId(videoDevices[0].deviceId);
+          const savedId = localStorage.getItem('glitch-selected-device-id');
+          const exists = videoDevices.some(d => d.deviceId === savedId);
+          if (!savedId || !exists) {
+            setSelectedDeviceId(videoDevices[0].deviceId);
+          }
         }
       } catch (err) {
         setError('Failed to access webcam. Please ensure permissions are granted.');
