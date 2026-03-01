@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, Bug, Camera, Crop, HelpCircle, Layers, Maximize, MonitorPlay, Settings, X } from 'lucide-react';
+import { Activity, Bug, Camera, Crop, HelpCircle, Layers, Maximize, MonitorPlay, Settings, Volume2, X } from 'lucide-react';
 import { PoseDetectorService } from './services/poseDetector';
 import { GlitchRenderer, GlitchEffects, DEFAULT_GLITCH_EFFECTS } from './services/glitchRenderer';
+import { AudioEngine, AudioSettings, DEFAULT_AUDIO_SETTINGS, AudioGlitchEffects, DEFAULT_AUDIO_GLITCH_EFFECTS } from './services/audioEngine';
 import { cn } from './lib/utils';
 
 // ─── Single source of truth for keybindings ───────────────────────────────────
@@ -20,6 +21,20 @@ export const EFFECT_DEFS: Array<{
   { effectKey: 'chromaticAberration', label: 'Chromatic Aberration', description: 'RGB channel splitting',        keybind: 'R' },
 ];
 
+type AudioEffectKey = keyof AudioGlitchEffects;
+
+export const AUDIO_EFFECT_DEFS: Array<{
+  effectKey: AudioEffectKey;
+  label: string;
+  description: string;
+}> = [
+  { effectKey: 'stutter',    label: 'Stutter',     description: 'Rapid micro-retriggering' },
+  { effectKey: 'reverse',    label: 'Reverse',     description: 'Random reversed playback' },
+  { effectKey: 'distortion', label: 'Distortion',  description: 'Harsh waveshaper clipping' },
+  { effectKey: 'randomPan',  label: 'Random Pan',  description: 'Chaotic stereo placement' },
+  { effectKey: 'bitcrusher', label: 'Bitcrusher',  description: 'Lo-fi sample reduction' },
+];
+
 export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
   { key: '1 – 9', description: 'Select input device by number' },
   { key: 'Space', description: 'Toggle dynamic / fixed mode' },
@@ -27,6 +42,7 @@ export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
   { key: 'C / V', description: 'Decrease / increase fixed intensity by 5%' },
   { key: 'B / N', description: 'Decrease / increase dynamic intensity by 5%' },
   { key: 'P',     description: 'Toggle all effects on / off' },
+  { key: 'M',     description: 'Toggle audio on / off' },
   { key: 'F',     description: 'Toggle fullscreen' },
   { key: 'D',     description: 'Toggle debug mode' },
   { key: 'S',     description: 'Toggle crop mode' },
@@ -43,6 +59,7 @@ interface AppSettings {
   showDebug: boolean;
   isCropMode: boolean;
   effects: GlitchEffects;
+  audio: AudioSettings;
 }
 
 interface AppState {
@@ -66,6 +83,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showDebug: false,
   isCropMode: false,
   effects: { ...DEFAULT_GLITCH_EFFECTS },
+  audio: { ...DEFAULT_AUDIO_SETTINGS },
 };
 
 function loadSettings(): AppSettings {
@@ -73,7 +91,16 @@ function loadSettings(): AppSettings {
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      return { ...DEFAULT_SETTINGS, ...parsed, effects: { ...DEFAULT_GLITCH_EFFECTS, ...parsed.effects } };
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        effects: { ...DEFAULT_GLITCH_EFFECTS, ...parsed.effects },
+        audio: {
+          ...DEFAULT_AUDIO_SETTINGS,
+          ...parsed.audio,
+          effects: { ...DEFAULT_AUDIO_GLITCH_EFFECTS, ...(parsed.audio?.effects) },
+        },
+      };
     } catch { /* fall through to migration */ }
   }
   // Migrate from old individual keys
@@ -85,6 +112,7 @@ function loadSettings(): AppSettings {
     showDebug: JSON.parse(localStorage.getItem('glitch-show-debug') ?? 'false'),
     isCropMode: JSON.parse(localStorage.getItem('glitch-is-crop-mode') ?? 'false'),
     effects: { ...DEFAULT_GLITCH_EFFECTS, ...JSON.parse(localStorage.getItem('glitch-effects') ?? '{}') },
+    audio: { ...DEFAULT_AUDIO_SETTINGS },
   };
 }
 
@@ -97,6 +125,7 @@ export default function App() {
   const idleTimeoutRef = useRef<number | null>(null);
   const detectorRef = useRef<PoseDetectorService | null>(null);
   const rendererRef = useRef<GlitchRenderer | null>(null);
+  const audioRef = useRef<AudioEngine | null>(null);
   const requestRef = useRef<number>(0);
 
   // ── Unified State ──────────────────────────────────────────────────────────
@@ -241,6 +270,16 @@ export default function App() {
             settings: { ...prev.settings, isCropMode: !prev.settings.isCropMode }
           }));
           break;
+        case 'm':
+        case 'M':
+          setState(prev => ({
+            ...prev,
+            settings: {
+              ...prev.settings,
+              audio: { ...prev.settings.audio, enabled: !prev.settings.audio.enabled }
+            }
+          }));
+          break;
         case '?':
           setState(prev => ({ ...prev, showHelp: !prev.showHelp }));
           break;
@@ -313,6 +352,33 @@ export default function App() {
     initModels();
   }, []);
 
+  // ── Audio engine initialisation (after AI model is ready) ────────────────
+
+  useEffect(() => {
+    if (!state.isModelLoaded) return;
+
+    const engine = new AudioEngine();
+    engine.initialize()
+      .then(() => {
+        audioRef.current = engine;
+        engine.setVolume(stateRef.current.settings.audio.volume);
+        console.log('Audio engine initialised');
+      })
+      .catch((err) => {
+        console.warn('Audio engine failed to load (WAV file missing?):', err);
+      });
+
+    return () => {
+      engine.dispose();
+      audioRef.current = null;
+    };
+  }, [state.isModelLoaded]);
+
+  // Keep audio volume in sync with settings
+  useEffect(() => {
+    audioRef.current?.setVolume(state.settings.audio.volume);
+  }, [state.settings.audio.volume]);
+
   // ── Stream ────────────────────────────────────────────────────────────────
 
   const { selectedDeviceId } = state.settings;
@@ -375,6 +441,16 @@ export default function App() {
             const s = stateRef.current.settings;
             const intensity = s.isDynamicMode ? s.dynamicIntensity : s.fixedIntensity;
             renderer.render(video, regions, s.isDynamicMode, intensity, s.showDebug, s.effects);
+
+            // Trigger audio for regions with movement
+            if (audioRef.current && s.audio.enabled) {
+              for (const region of regions) {
+                if (region.smoothedVelocity > 0.05) {
+                  const regionKey = `${region.personId}_${region.id}`;
+                  audioRef.current.triggerNote(region.smoothedVelocity, regionKey, s.audio);
+                }
+              }
+            }
           } finally {
             isProcessing = false;
           }
@@ -401,7 +477,7 @@ export default function App() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const {
-    settings: { isDynamicMode, dynamicIntensity, fixedIntensity, showDebug, isCropMode, effects },
+    settings: { isDynamicMode, dynamicIntensity, fixedIntensity, showDebug, isCropMode, effects, audio },
     devices,
     isIdle,
     isFullscreen,
@@ -704,6 +780,201 @@ export default function App() {
                 </button>
               </div>
             ))}
+          </div>
+
+          {/* Audio Settings */}
+          <div className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-zinc-400">
+                <Volume2 className="w-4 h-4" />
+                <h2 className="text-sm font-medium uppercase tracking-wider">Audio</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-mono text-xs">M</kbd>
+                <button
+                  role="switch"
+                  aria-checked={audio.enabled}
+                  onClick={() => setState(prev => ({
+                    ...prev,
+                    settings: {
+                      ...prev.settings,
+                      audio: { ...prev.settings.audio, enabled: !prev.settings.audio.enabled }
+                    }
+                  }))}
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
+                    audio.enabled ? "bg-emerald-500" : "bg-zinc-700"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transition-transform",
+                      audio.enabled ? "translate-x-5" : "translate-x-0"
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Plays a stylophone note when movement is detected. Pitch scales with speed.
+            </p>
+
+            <div className={cn("space-y-4 transition-opacity duration-200", !audio.enabled && "opacity-40 pointer-events-none")}>
+
+              {/* Volume (logarithmic) */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-200">Volume</span>
+                  <span className="text-zinc-300 font-mono">{audio.volume}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={audio.volume}
+                  onChange={(e) => setState(prev => ({
+                    ...prev,
+                    settings: {
+                      ...prev.settings,
+                      audio: { ...prev.settings.audio, volume: parseInt(e.target.value) }
+                    }
+                  }))}
+                  className="w-full accent-emerald-500"
+                />
+                <div className="flex justify-between text-xs text-zinc-600">
+                  <span>Silent</span>
+                  <span>Logarithmic</span>
+                  <span>Max</span>
+                </div>
+              </div>
+
+              {/* Pitch Range */}
+              <div className="space-y-2">
+                <div className="text-sm text-zinc-200">Pitch Range</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Min</span>
+                      <span className="text-zinc-300 font-mono">{audio.pitchMin.toFixed(2)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="2.0"
+                      step="0.05"
+                      value={audio.pitchMin}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setState(prev => ({
+                          ...prev,
+                          settings: {
+                            ...prev.settings,
+                            audio: {
+                              ...prev.settings.audio,
+                              pitchMin: val,
+                              pitchMax: Math.max(val, prev.settings.audio.pitchMax),
+                            }
+                          }
+                        }));
+                      }}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Max</span>
+                      <span className="text-zinc-300 font-mono">{audio.pitchMax.toFixed(2)}x</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="4.0"
+                      step="0.05"
+                      value={audio.pitchMax}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setState(prev => ({
+                          ...prev,
+                          settings: {
+                            ...prev.settings,
+                            audio: {
+                              ...prev.settings.audio,
+                              pitchMax: val,
+                              pitchMin: Math.min(val, prev.settings.audio.pitchMin),
+                            }
+                          }
+                        }));
+                      }}
+                      className="w-full accent-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Probability */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-200">Trigger Probability</span>
+                  <span className="text-zinc-300 font-mono">{audio.probability}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={audio.probability}
+                  onChange={(e) => setState(prev => ({
+                    ...prev,
+                    settings: {
+                      ...prev.settings,
+                      audio: { ...prev.settings.audio, probability: parseInt(e.target.value) }
+                    }
+                  }))}
+                  className="w-full accent-emerald-500"
+                />
+              </div>
+
+              {/* Audio Glitch Effects */}
+              <div className="space-y-3 pt-2 border-t border-zinc-800">
+                <div className="text-sm text-zinc-400">Glitch Effects</div>
+                {AUDIO_EFFECT_DEFS.map(({ effectKey, label, description }) => (
+                  <div key={effectKey} className="flex items-center justify-between gap-3 group">
+                    <div className="min-w-0">
+                      <span className="text-sm text-zinc-300 group-hover:text-zinc-100 transition-colors">{label}</span>
+                      <div className="text-xs text-zinc-500">{description}</div>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={audio.effects[effectKey]}
+                      onClick={() => setState(prev => ({
+                        ...prev,
+                        settings: {
+                          ...prev.settings,
+                          audio: {
+                            ...prev.settings.audio,
+                            effects: { ...prev.settings.audio.effects, [effectKey]: !prev.settings.audio.effects[effectKey] }
+                          }
+                        }
+                      }))}
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
+                        audio.effects[effectKey] ? "bg-emerald-500" : "bg-zinc-700"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transition-transform",
+                          audio.effects[effectKey] ? "translate-x-5" : "translate-x-0"
+                        )}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+            </div>
           </div>
 
         </div>
