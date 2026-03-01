@@ -52,6 +52,7 @@ interface AppState {
   isFullscreen: boolean;
   showHelp: boolean;
   isModelLoaded: boolean;
+  isVideoLoaded: boolean;
   error: string | null;
 }
 
@@ -107,6 +108,7 @@ export default function App() {
     isFullscreen: false,
     showHelp: false,
     isModelLoaded: false,
+    isVideoLoaded: false,
     error: null,
   }));
 
@@ -323,6 +325,7 @@ export default function App() {
 
     async function startStream() {
       try {
+        setState(prev => ({ ...prev, isVideoLoaded: false }));
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: selectedDeviceId } }
         });
@@ -404,6 +407,7 @@ export default function App() {
     isFullscreen,
     showHelp,
     isModelLoaded,
+    isVideoLoaded,
     error
   } = state;
 
@@ -423,10 +427,10 @@ export default function App() {
             <h1 className="text-xl font-semibold tracking-tight">GlitchMe</h1>
           </div>
           <div className="flex items-center gap-3">
-            {!isModelLoaded && !error && (
+            {(!isModelLoaded || !state.isVideoLoaded) && !error && (
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <div className="w-4 h-4 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-                Loading AI Model...
+                {!isModelLoaded ? 'Loading AI Model...' : 'Starting Camera...'}
               </div>
             )}
             <button
@@ -510,15 +514,26 @@ export default function App() {
               </div>
             )}
 
-            {!isModelLoaded && !error && (
+            {(!isModelLoaded || !isVideoLoaded) && !error && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900/50 backdrop-blur-md z-20">
                 <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
-                <div className="text-lg font-medium text-emerald-500">Initializing AI Model</div>
-                <div className="text-sm text-zinc-400 mt-1">Downloading neural weights...</div>
+                <div className="text-lg font-medium text-emerald-500">
+                  {!isModelLoaded ? 'Initializing AI Model' : 'Connecting to Camera'}
+                </div>
+                <div className="text-sm text-zinc-400 mt-1">
+                  {!isModelLoaded ? 'Downloading neural weights...' : 'Waiting for video stream...'}
+                </div>
               </div>
             )}
 
-            <video ref={videoRef} autoPlay playsInline muted className="absolute opacity-0 pointer-events-none" />
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute opacity-0 pointer-events-none"
+              onLoadedData={() => setState(prev => ({ ...prev, isVideoLoaded: true }))}
+            />
             <canvas
               ref={canvasRef}
               className={cn(
