@@ -8,7 +8,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [isDynamicMode, setIsDynamicMode] = useState(true);
@@ -43,7 +43,7 @@ export default function App() {
       window.clearTimeout(idleTimeoutRef.current);
     }
   };
-  
+
   const isDynamicModeRef = useRef(isDynamicMode);
   const fixedIntensityRef = useRef(fixedIntensity);
   const showDebugRef = useRef(showDebug);
@@ -122,7 +122,7 @@ export default function App() {
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: selectedDeviceId } }
         });
-        
+
         if (!isMounted) {
           // If unmounted while waiting for stream, stop it immediately
           newStream.getTracks().forEach(track => track.stop());
@@ -158,7 +158,7 @@ export default function App() {
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
+
     if (!rendererRef.current) {
       rendererRef.current = new GlitchRenderer(canvas);
     }
@@ -177,13 +177,13 @@ export default function App() {
             }
 
             const regions = await detectorRef.current.detectPoses(video);
-            
+
             // Use refs for current state to avoid dependency loop in useEffect
             renderer.render(
-              video, 
-              regions, 
-              isDynamicModeRef.current, 
-              fixedIntensityRef.current, 
+              video,
+              regions,
+              isDynamicModeRef.current,
+              fixedIntensityRef.current,
               showDebugRef.current
             );
           } finally {
@@ -223,7 +223,7 @@ export default function App() {
             <MonitorPlay className="w-6 h-6 text-emerald-400" />
             <h1 className="text-xl font-semibold tracking-tight">GlitchMe</h1>
           </div>
-          
+
           <div className="flex items-center gap-4">
             {!isModelLoaded && !error && (
               <div className="flex items-center gap-2 text-sm text-zinc-400">
@@ -236,10 +236,10 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8 grid lg:grid-cols-[1fr_320px] gap-8">
-        
+
         {/* Main Viewport */}
         <div className="space-y-4">
-          <div 
+          <div
             ref={containerRef}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
@@ -255,22 +255,22 @@ export default function App() {
             ) : (
               <>
                 {/* Hidden video element for source */}
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
-                  muted 
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
                   className="absolute opacity-0 pointer-events-none"
                 />
                 {/* Visible canvas for rendering */}
-                <canvas 
+                <canvas
                   ref={canvasRef}
                   className={cn(
                     "w-full h-full transition-all duration-300",
                     isCropMode ? "object-cover" : "object-contain"
                   )}
                 />
-                
+
                 {/* Viewport Controls */}
                 <div className={cn(
                   "absolute bottom-4 right-4 flex items-center gap-2 transition-opacity duration-300",
@@ -311,15 +311,15 @@ export default function App() {
 
         {/* Controls Sidebar */}
         <div className="space-y-6">
-          
+
           {/* Camera Selection */}
           <div className="bg-zinc-900 rounded-xl p-5 border border-zinc-800 space-y-4">
             <div className="flex items-center gap-2 text-zinc-400 mb-2">
               <Camera className="w-4 h-4" />
               <h2 className="text-sm font-medium uppercase tracking-wider">Input Source</h2>
             </div>
-            
-            <select 
+
+            <select
               value={selectedDeviceId}
               onChange={(e) => setSelectedDeviceId(e.target.value)}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
@@ -366,21 +366,21 @@ export default function App() {
               </div>
 
               <p className="text-xs text-zinc-500 leading-relaxed">
-                {isDynamicMode 
-                  ? "Glitch intensity is driven by movement velocity. Use the slider to multiply the effect." 
+                {isDynamicMode
+                  ? "Glitch intensity is driven by movement velocity."
                   : "Glitch intensity is fixed and applied uniformly to all detected body parts."}
               </p>
 
               {/* Intensity Slider */}
               <div className="space-y-3 transition-opacity duration-300">
                 <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">{isDynamicMode ? "Intensity Multiplier" : "Intensity"}</span>
+                  <span className="text-zinc-400">Intensity</span>
                   <span className="text-zinc-300 font-mono">{Math.round(fixedIntensity * 100)}%</span>
                 </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="2" 
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
                   step="0.01"
                   value={fixedIntensity}
                   onChange={(e) => setFixedIntensity(parseFloat(e.target.value))}
