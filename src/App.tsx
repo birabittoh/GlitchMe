@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Activity, Bug, Camera, Crop, HelpCircle, Layers, Maximize, MonitorPlay, Settings, Volume2, X } from 'lucide-react';
 import { PoseDetectorService } from './services/poseDetector';
 import { GlitchRenderer, GlitchEffects, DEFAULT_GLITCH_EFFECTS } from './services/glitchRenderer';
-import { SoundEngine, AudioSettings, AudioGlitchEffects, DEFAULT_AUDIO_SETTINGS, DEFAULT_AUDIO_GLITCH_EFFECTS, sliderToHz, hzToSlider, sliderToDuration, durationToSlider } from './services/soundEngine';
+import { SoundEngine, AudioSettings, AudioGlitchEffects, Waveform, DEFAULT_AUDIO_SETTINGS, DEFAULT_AUDIO_GLITCH_EFFECTS, sliderToHz, hzToSlider, sliderToDuration, durationToSlider } from './services/soundEngine';
 import { cn } from './lib/utils';
 
 // ─── Single source of truth for keybindings ───────────────────────────────────
@@ -28,10 +28,16 @@ export const AUDIO_EFFECT_DEFS: Array<{
   label: string;
   description: string;
 }> = [
-  { effectKey: 'distortion', label: 'Distortion',  description: 'Aggressive waveshaping' },
-  { effectKey: 'wobble',     label: 'Wobble',       description: 'Frequency modulation glitch' },
-  { effectKey: 'echo',       label: 'Echo',         description: 'Delayed feedback loop' },
-  { effectKey: 'noise',      label: 'Noise',        description: 'White noise layer' },
+  { effectKey: 'distortion', label: 'Distortion', description: 'Aggressive waveshaping' },
+  { effectKey: 'wobble',     label: 'Wobble',      description: 'Frequency modulation glitch' },
+  { effectKey: 'bitcrush',   label: 'Bitcrush',    description: 'Lo-fi sample rate reduction' },
+];
+
+const WAVEFORM_OPTIONS: { value: Waveform; label: string }[] = [
+  { value: 'square',   label: 'Square' },
+  { value: 'sawtooth', label: 'Sawtooth' },
+  { value: 'triangle', label: 'Triangle' },
+  { value: 'sine',     label: 'Sine' },
 ];
 
 export const OTHER_KEYBINDINGS: Array<{ key: string; description: string }> = [
@@ -788,27 +794,24 @@ export default function App() {
 
             <div className={cn("space-y-5 transition-opacity duration-200", !audio.enabled && "opacity-40 pointer-events-none")}>
 
-              {/* Volume (logarithmic) */}
+              {/* Waveform */}
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Volume</span>
-                  <span className="text-zinc-300 font-mono">{Math.round(audio.volume * 100)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={audio.volume}
+                <div className="text-sm text-zinc-400">Waveform</div>
+                <select
+                  value={audio.waveform}
                   onChange={(e) => setState(prev => ({
                     ...prev,
                     settings: {
                       ...prev.settings,
-                      audio: { ...prev.settings.audio, volume: parseFloat(e.target.value) }
+                      audio: { ...prev.settings.audio, waveform: e.target.value as Waveform }
                     }
                   }))}
-                  className="w-full accent-emerald-500"
-                />
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                >
+                  {WAVEFORM_OPTIONS.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Pitch Range (dual-handle slider, logarithmic) */}

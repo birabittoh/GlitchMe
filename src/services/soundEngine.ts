@@ -5,13 +5,14 @@ import { RegionData } from './poseDetector';
 export interface AudioGlitchEffects {
   distortion: boolean;
   wobble: boolean;
-  echo: boolean;
-  noise: boolean;
+  bitcrush: boolean;
 }
+
+export type Waveform = 'square' | 'sawtooth' | 'triangle' | 'sine';
 
 export interface AudioSettings {
   enabled: boolean;
-  volume: number;       // 0–1 (mapped logarithmically to gain)
+  waveform: Waveform;
   minPitch: number;     // Hz
   maxPitch: number;     // Hz
   minDuration: number;  // seconds
@@ -23,16 +24,15 @@ export interface AudioSettings {
 export const DEFAULT_AUDIO_GLITCH_EFFECTS: AudioGlitchEffects = {
   distortion: false,
   wobble: false,
-  echo: false,
-  noise: false,
+  bitcrush: false,
 };
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   enabled: true,
-  volume: 0.7,
+  waveform: 'square',
   minPitch: 200,
   maxPitch: 2000,
-  minDuration: 0.05,
+  minDuration: 0.10,
   maxDuration: 0.30,
   probability: 80,
   effects: { ...DEFAULT_AUDIO_GLITCH_EFFECTS },
@@ -55,7 +55,7 @@ export function hzToSlider(hz: number): number {
 
 // ─── Duration helpers (logarithmic scale) ────────────────────────────────────
 
-const SLIDER_MIN_DUR = 0.02;  // 20 ms
+const SLIDER_MIN_DUR = 0.10;  // 100 ms
 const SLIDER_MAX_DUR = 1.0;   // 1000 ms
 
 /** Convert a 0–100 slider position to seconds on a logarithmic scale. */
@@ -76,8 +76,6 @@ const MAX_POLYPHONY = 12;
 export class SoundEngine {
   private audioCtx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private delayNode: DelayNode | null = null;
-  private feedbackGain: GainNode | null = null;
   private lastNoteTimes = new Map<string, number>();
   private settings: AudioSettings = { ...DEFAULT_AUDIO_SETTINGS };
   private activeNotes = 0;
@@ -92,16 +90,7 @@ export class SoundEngine {
   initialize() {
     this.audioCtx = new AudioContext();
     this.masterGain = this.audioCtx.createGain();
-    this.masterGain.gain.value = this.volumeToGain(this.settings.volume);
-
-    // Persistent delay/echo chain
-    this.delayNode = this.audioCtx.createDelay(1.0);
-    this.delayNode.delayTime.value = 0.15;
-    this.feedbackGain = this.audioCtx.createGain();
-    this.feedbackGain.gain.value = 0.3;
-    this.delayNode.connect(this.feedbackGain);
-    this.feedbackGain.connect(this.delayNode);
-    this.delayNode.connect(this.masterGain);
+    this.masterGain.gain.value = 3.0;
 
     this.masterGain.connect(this.audioCtx.destination);
 
@@ -135,16 +124,6 @@ export class SoundEngine {
 
   updateSettings(settings: AudioSettings) {
     this.settings = settings;
-    if (this.masterGain && this.audioCtx) {
-      const now = this.audioCtx.currentTime;
-      this.masterGain.gain.setTargetAtTime(this.volumeToGain(settings.volume), now, 0.02);
-    }
-  }
-
-  /** Quadratic mapping scaled to allow strong output at max volume. */
-  private volumeToGain(volume: number): number {
-    // 0 → 0,  0.5 → 0.75,  0.7 → 1.47,  1.0 → 3.0
-    return volume * volume * 3;
   }
 
   // ── Per-frame entry point ────────────────────────────────────────────────
@@ -189,7 +168,7 @@ export class SoundEngine {
   private playNote(velocity: number) {
     const ctx = this.audioCtx!;
     const now = ctx.currentTime;
-    const { minPitch, maxPitch, minDuration, maxDuration, effects } = this.settings;
+    const { minPitch, maxPitch, minDuration, maxDuration, waveform, effects } = this.settings;
 
     // Random duration within the configured range
     const dur = minDuration + Math.random() * (maxDuration - minDuration);
@@ -197,9 +176,9 @@ export class SoundEngine {
     // Logarithmic frequency mapping: low velocity → minPitch, high → maxPitch
     const freq = minPitch * Math.pow(maxPitch / Math.max(minPitch, 1), velocity);
 
-    // Oscillator – square wave for stylophone-like timbre
+    // Oscillator – user-selected waveform
     const osc = ctx.createOscillator();
-    osc.type = 'square';
+    osc.type = waveform;
     osc.frequency.value = freq;
 
     // Amplitude envelope (quick attack, exponential release)
@@ -230,31 +209,32 @@ export class SoundEngine {
       currentNode = ws;
     }
 
-    currentNode.connect(noteGain);
-
-    // ── Noise layer ────────────────────────────────────────────────────
-    if (effects.noise) {
+    // ── Bitcrush (sample-rate reduction via staircase gain modulation) ─
+    if (effects.bitcrush) {
+      // Render a staircase buffer that holds each sample for N frames,
+      // simulating reduced sample-rate when used as a gain envelope.
+      const crushRate = 4000; // target "sample rate" in Hz
+      const holdSamples = Math.max(1, Math.floor(ctx.sampleRate / crushRate));
       const bufLen = Math.ceil(ctx.sampleRate * dur);
-      const noiseBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-      const data = noiseBuf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-
-      const noiseSrc = ctx.createBufferSource();
-      noiseSrc.buffer = noiseBuf;
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.25, now);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
-      noiseSrc.connect(noiseGain);
-      noiseGain.connect(noteGain);
-      noiseSrc.start(now);
-      noiseSrc.stop(now + dur);
+      const crushBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+      const crushData = crushBuf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) {
+        // quantise to 4-bit (16 levels) and hold
+        const phase = (i % holdSamples) / holdSamples;
+        crushData[i] = phase < 0.5 ? 1 : 0;
+      }
+      const crushSrc = ctx.createBufferSource();
+      crushSrc.buffer = crushBuf;
+      const crushGain = ctx.createGain();
+      crushGain.gain.value = 0;
+      crushSrc.connect(crushGain.gain);
+      currentNode.connect(crushGain);
+      currentNode = crushGain;
+      crushSrc.start(now);
+      crushSrc.stop(now + dur);
     }
 
-    // ── Echo send ──────────────────────────────────────────────────────
-    if (effects.echo && this.delayNode) {
-      noteGain.connect(this.delayNode);
-    }
-
+    currentNode.connect(noteGain);
     noteGain.connect(this.masterGain!);
 
     // ── Start / cleanup ────────────────────────────────────────────────
