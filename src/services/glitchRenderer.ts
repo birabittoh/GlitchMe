@@ -153,7 +153,7 @@ export class GlitchRenderer {
       this.ctx.font = '12px monospace';
       // The x coordinate needs to be mirrored back: -(xMin) - textWidth
       // But we don't know text width easily. Let's just use -(xMin + width)
-      this.ctx.fillText(`${region.id}: ${intensity.toFixed(2)}`, -(xMin + width), yMin - 5);
+      this.ctx.fillText(`p${region.personId} ${region.id}: ${intensity.toFixed(2)}`, -(xMin + width), yMin - 5);
     } finally {
       this.ctx.restore();
     }

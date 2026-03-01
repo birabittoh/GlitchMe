@@ -20,6 +20,7 @@ export interface BoundingBox {
 
 export interface RegionData {
   id: BodyRegion;
+  personId: number;
   keypoints: poseDetection.Keypoint[];
   centroid: Point;
   boundingBox: BoundingBox;
@@ -40,9 +41,9 @@ const SMOOTHING_FACTOR = 0.2;
 
 export class PoseDetectorService {
   private detector: poseDetection.PoseDetector | null = null;
-  private previousCentroids: Partial<Record<BodyRegion, Point>> = {};
+  private previousCentroids: Record<string, Point> = {};
   private previousTime: number = 0;
-  private smoothedVelocities: Partial<Record<BodyRegion, number>> = {};
+  private smoothedVelocities: Record<string, number> = {};
   private offscreenCanvas = document.createElement('canvas');
   private offscreenCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
 
@@ -50,8 +51,8 @@ export class PoseDetectorService {
     await tf.setBackend('webgl');
     await tf.ready();
 
-    const MOVENET_URL = 'https://tfhub.dev/google/tfjs-model/movenet/singlepose/lightning/4';
-    const MODEL_CACHE_KEY = 'movenet-lightning-v4';
+    const MOVENET_URL = 'https://tfhub.dev/google/tfjs-model/movenet/multipose/lightning/1';
+    const MODEL_CACHE_KEY = 'movenet-multipose-lightning-v1';
     const MODEL_CACHE_URL = `indexeddb://${MODEL_CACHE_KEY}`;
 
     try {
@@ -72,9 +73,10 @@ export class PoseDetectorService {
 
     const model = poseDetection.SupportedModels.MoveNet;
     const detectorConfig = {
-      modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+      modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
       enableSmoothing: true,
-      modelUrl: MODEL_CACHE_URL
+      enableTracking: true,
+      modelUrl: MODEL_CACHE_URL,
     };
 
     try {
@@ -82,8 +84,9 @@ export class PoseDetectorService {
     } catch (err) {
       console.warn('Failed to load model from IndexedDB, falling back to URL...', err);
       this.detector = await poseDetection.createDetector(model, {
-        modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+        modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
         enableSmoothing: true,
+        enableTracking: true,
       });
     }
   }
@@ -107,73 +110,89 @@ export class PoseDetectorService {
 
     if (poses.length === 0) return [];
 
-    const pose = poses[0];
     const regions: RegionData[] = [];
+    const activeKeys = new Set<string>();
 
-    for (const [regionId, keypointNames] of Object.entries(REGION_KEYPOINTS)) {
-      const regionKeypoints = pose.keypoints.filter(
-        (kp) => keypointNames.includes(kp.name!) && kp.score && kp.score > 0.3
-      );
+    for (const pose of poses) {
+      const personId = pose.id ?? 0;
 
-      if (regionKeypoints.length === 0) continue;
+      for (const [regionId, keypointNames] of Object.entries(REGION_KEYPOINTS)) {
+        const regionKeypoints = pose.keypoints.filter(
+          (kp) => keypointNames.includes(kp.name!) && kp.score && kp.score > 0.3
+        );
 
-      // Calculate centroid
-      const centroid = regionKeypoints.reduce(
-        (acc, kp) => ({ x: acc.x + kp.x, y: acc.y + kp.y }),
-        { x: 0, y: 0 }
-      );
-      centroid.x /= regionKeypoints.length;
-      centroid.y /= regionKeypoints.length;
+        if (regionKeypoints.length === 0) continue;
 
-      // Calculate bounding box
-      const xs = regionKeypoints.map((kp) => kp.x);
-      const ys = regionKeypoints.map((kp) => kp.y);
-      const xMin = Math.min(...xs);
-      const xMax = Math.max(...xs);
-      const yMin = Math.min(...ys);
-      const yMax = Math.max(...ys);
+        const trackingKey = `${personId}_${regionId}`;
+        activeKeys.add(trackingKey);
 
-      // Add some padding to bounding box
-      const padding = 20;
-      const boundingBox: BoundingBox = {
-        xMin: Math.max(0, xMin - padding),
-        yMin: Math.max(0, yMin - padding),
-        width: xMax - xMin + padding * 2,
-        height: yMax - yMin + padding * 2,
-      };
+        // Calculate centroid
+        const centroid = regionKeypoints.reduce(
+          (acc, kp) => ({ x: acc.x + kp.x, y: acc.y + kp.y }),
+          { x: 0, y: 0 }
+        );
+        centroid.x /= regionKeypoints.length;
+        centroid.y /= regionKeypoints.length;
 
-      // Calculate velocity
-      let velocity = 0;
-      const prevCentroid = this.previousCentroids[regionId as BodyRegion];
-      if (prevCentroid && deltaTime > 0) {
-        const dx = centroid.x - prevCentroid.x;
-        const dy = centroid.y - prevCentroid.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // Normalize distance by video width to make it resolution independent
-        const normalizedDistance = distance / video.videoWidth;
-        velocity = normalizedDistance / deltaTime;
+        // Calculate bounding box
+        const xs = regionKeypoints.map((kp) => kp.x);
+        const ys = regionKeypoints.map((kp) => kp.y);
+        const xMin = Math.min(...xs);
+        const xMax = Math.max(...xs);
+        const yMin = Math.min(...ys);
+        const yMax = Math.max(...ys);
+
+        // Add some padding to bounding box
+        const padding = 20;
+        const boundingBox: BoundingBox = {
+          xMin: Math.max(0, xMin - padding),
+          yMin: Math.max(0, yMin - padding),
+          width: xMax - xMin + padding * 2,
+          height: yMax - yMin + padding * 2,
+        };
+
+        // Calculate velocity per limb
+        let velocity = 0;
+        const prevCentroid = this.previousCentroids[trackingKey];
+        if (prevCentroid && deltaTime > 0) {
+          const dx = centroid.x - prevCentroid.x;
+          const dy = centroid.y - prevCentroid.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          // Normalize distance by video width to make it resolution independent
+          const normalizedDistance = distance / video.videoWidth;
+          velocity = normalizedDistance / deltaTime;
+        }
+
+        // Normalize velocity (e.g. 2.0 means moving 2x video width per second, which is very fast)
+        const MAX_NORMALIZED_VELOCITY = 2.0;
+        const normalizedVelocity = Math.min(velocity / MAX_NORMALIZED_VELOCITY, 1.0);
+
+        // Smooth velocity
+        const prevSmoothed = this.smoothedVelocities[trackingKey] || 0;
+        const smoothedVelocity = prevSmoothed * (1 - SMOOTHING_FACTOR) + normalizedVelocity * SMOOTHING_FACTOR;
+
+        this.previousCentroids[trackingKey] = centroid;
+        this.smoothedVelocities[trackingKey] = smoothedVelocity;
+
+        regions.push({
+          id: regionId as BodyRegion,
+          personId,
+          keypoints: regionKeypoints,
+          centroid,
+          boundingBox,
+          velocity: normalizedVelocity,
+          smoothedVelocity,
+        });
       }
+    }
 
-      // Normalize velocity (e.g. 2.0 means moving 2x video width per second, which is very fast)
-      const MAX_NORMALIZED_VELOCITY = 2.0;
-      const normalizedVelocity = Math.min(velocity / MAX_NORMALIZED_VELOCITY, 1.0);
-
-      // Smooth velocity
-      const prevSmoothed = this.smoothedVelocities[regionId as BodyRegion] || 0;
-      const smoothedVelocity = prevSmoothed * (1 - SMOOTHING_FACTOR) + normalizedVelocity * SMOOTHING_FACTOR;
-
-      this.previousCentroids[regionId as BodyRegion] = centroid;
-      this.smoothedVelocities[regionId as BodyRegion] = smoothedVelocity;
-
-      regions.push({
-        id: regionId as BodyRegion,
-        keypoints: regionKeypoints,
-        centroid,
-        boundingBox,
-        velocity: normalizedVelocity,
-        smoothedVelocity,
-      });
+    // Clean up stale tracking data for people who left the frame
+    for (const key of Object.keys(this.previousCentroids)) {
+      if (!activeKeys.has(key)) {
+        delete this.previousCentroids[key];
+        delete this.smoothedVelocities[key];
+      }
     }
 
     return regions;
