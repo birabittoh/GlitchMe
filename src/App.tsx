@@ -325,7 +325,7 @@ export default function App() {
 
     async function startStream() {
       try {
-        setState(prev => ({ ...prev, isVideoLoaded: false }));
+        setState(prev => ({ ...prev, isVideoLoaded: false, error: null }));
         const newStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: selectedDeviceId } }
         });
