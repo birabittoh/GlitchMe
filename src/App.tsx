@@ -954,13 +954,13 @@ export default function App() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-400">Probability</span>
-                  <span className="text-zinc-300 font-mono">{Math.round(audio.probability)}%</span>
+                  <span className="text-zinc-300 font-mono">{audio.probability.toFixed(1)}%</span>
                 </div>
                 <input
                   type="range"
-                  min="0"
-                  max="100"
-                  step="1"
+                  min="0.1"
+                  max="25"
+                  step="0.1"
                   value={audio.probability}
                   onChange={(e) => setState(prev => ({
                     ...prev,

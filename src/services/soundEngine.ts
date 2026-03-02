@@ -34,7 +34,7 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   maxPitch: 2000,
   minDuration: 0.10,
   maxDuration: 0.30,
-  probability: 80,
+  probability: 10,
   effects: { ...DEFAULT_AUDIO_GLITCH_EFFECTS },
 };
 
