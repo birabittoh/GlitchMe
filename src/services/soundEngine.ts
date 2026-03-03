@@ -12,7 +12,7 @@ export type Waveform = 'square' | 'sawtooth' | 'triangle' | 'sine';
 
 export interface AudioSettings {
   enabled: boolean;
-  waveform: Waveform;
+  waveforms: Waveform[];
   minPitch: number;     // Hz
   maxPitch: number;     // Hz
   minDuration: number;  // seconds
@@ -29,7 +29,7 @@ export const DEFAULT_AUDIO_GLITCH_EFFECTS: AudioGlitchEffects = {
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   enabled: true,
-  waveform: 'square',
+  waveforms: ['square'],
   minPitch: 200,
   maxPitch: 2000,
   minDuration: 0.10,
@@ -168,7 +168,10 @@ export class SoundEngine {
   private playNote(velocity: number) {
     const ctx = this.audioCtx!;
     const now = ctx.currentTime;
-    const { minPitch, maxPitch, minDuration, maxDuration, waveform, effects } = this.settings;
+    const { minPitch, maxPitch, minDuration, maxDuration, waveforms, effects } = this.settings;
+
+    // Pick a random waveform from the selected ones
+    const waveform = waveforms[Math.floor(Math.random() * waveforms.length)] || 'square';
 
     // Random duration within the configured range
     const dur = minDuration + Math.random() * (maxDuration - minDuration);

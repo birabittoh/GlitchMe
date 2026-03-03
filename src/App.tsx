@@ -127,13 +127,19 @@ function loadSettings(): AppSettings {
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
+
+      // Handle migration from waveform (string) to waveforms (array)
+      let audioSettings = { ...DEFAULT_AUDIO_SETTINGS, ...parsed.audio };
+      if (parsed.audio?.waveform && !parsed.audio?.waveforms) {
+        audioSettings.waveforms = [parsed.audio.waveform];
+      }
+
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
         effects: { ...DEFAULT_GLITCH_EFFECTS, ...parsed.effects },
         audio: {
-          ...DEFAULT_AUDIO_SETTINGS,
-          ...parsed.audio,
+          ...audioSettings,
           effects: { ...DEFAULT_AUDIO_GLITCH_EFFECTS, ...(parsed.audio?.effects) },
         },
       };
@@ -827,29 +833,43 @@ export default function App() {
 
               {/* Waveform */}
               <div className="space-y-2">
-                <div className="text-sm text-zinc-400">Waveform</div>
+                <div className="text-sm text-zinc-400">waveforms</div>
                 <div className="grid grid-cols-4 gap-2">
-                  {WAVEFORM_OPTIONS.map(({ value, label }) => (
-                    <button
-                      key={value}
-                      title={label}
-                      onClick={() => setState(prev => ({
-                        ...prev,
-                        settings: {
-                          ...prev.settings,
-                          audio: { ...prev.settings.audio, waveform: value }
-                        }
-                      }))}
-                      className={cn(
-                        "aspect-square flex items-center justify-center rounded-lg border transition-all",
-                        audio.waveform === value
-                          ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-400"
-                          : "bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
-                      )}
-                    >
-                      <WaveformIcon type={value} className="w-6 h-6" />
-                    </button>
-                  ))}
+                  {WAVEFORM_OPTIONS.map(({ value, label }) => {
+                    const isActive = audio.waveforms.includes(value);
+                    return (
+                      <button
+                        key={value}
+                        title={label}
+                        onClick={() => setState(prev => {
+                          const currentWaveforms = prev.settings.audio.waveforms;
+                          let nextWaveforms: Waveform[];
+                          if (currentWaveforms.includes(value)) {
+                            // Don't allow less than one waveform
+                            if (currentWaveforms.length <= 1) return prev;
+                            nextWaveforms = currentWaveforms.filter(w => w !== value);
+                          } else {
+                            nextWaveforms = [...currentWaveforms, value];
+                          }
+                          return {
+                            ...prev,
+                            settings: {
+                              ...prev.settings,
+                              audio: { ...prev.settings.audio, waveforms: nextWaveforms }
+                            }
+                          };
+                        })}
+                        className={cn(
+                          "aspect-square flex items-center justify-center rounded-lg border transition-all",
+                          isActive
+                            ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-400"
+                            : "bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700"
+                        )}
+                      >
+                        <WaveformIcon type={value} className="w-6 h-6" />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
